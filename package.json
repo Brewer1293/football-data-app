@@ -1,0 +1,14 @@
+{
+  "name": "football-data-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check worker.js && node --check public/app.js",
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.96.0"
+  }
+}

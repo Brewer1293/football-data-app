@@ -2,5 +2,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env
+.wrangler/
+node_modules/
 data/*.db
 data/*.log

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101a2c" />
+    <title>Football Data Lab | Brewer Labs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="wordmark" href="https://home.brewerlabs.uk/">
+        <span class="wordmark-icon">BL</span>
+        <span><strong>Football Data Lab</strong><small>Brewer Labs</small></span>
+      </a>
+      <div class="topbar-actions">
+        <span class="status"><i></i> Demo dataset loaded</span>
+        <a class="home-link" href="https://home.brewerlabs.uk/">Project index</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">GOAL MARKET ANALYSIS / POISSON V1</p>
+          <h1>Fixture value<br /><span>without the noise.</span></h1>
+          <p class="hero-copy">Compare explainable goal-market probabilities with bookmaker decimal odds using team splits, recent form and xG.</p>
+        </div>
+        <div class="hero-note">
+          <span>Model scope</span>
+          <strong>Over 1.5 &amp; 2.5 goals</strong>
+          <small>Research tool, not betting advice.</small>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="controls panel">
+          <div class="panel-heading">
+            <p class="eyebrow">FIXTURE SETUP</p>
+            <h2>Analyse a match</h2>
+          </div>
+          <label><span>Competition</span><select id="league-select"></select></label>
+          <label><span>Home team</span><select id="home-team"></select></label>
+          <label><span>Away team</span><select id="away-team"></select></label>
+          <div class="odds-grid">
+            <label><span>Odds: Over 1.5</span><input id="odds-15" type="number" min="1.01" step="0.01" value="1.45" /></label>
+            <label><span>Odds: Over 2.5</span><input id="odds-25" type="number" min="1.01" step="0.01" value="2.10" /></label>
+          </div>
+          <button id="analyse-button" type="button">Run analysis</button>
+          <p class="control-note">Demo results are bundled with the app so the model works immediately. The original Python project remains available for richer imports and provider integrations.</p>
+        </aside>
+
+        <div class="results">
+          <section class="panel result-hero">
+            <div>
+              <p class="eyebrow">FIXTURE OUTLOOK</p>
+              <h2 id="fixture-title">Loading model...</h2>
+              <p id="fixture-subtitle"></p>
+            </div>
+            <span id="confidence" class="confidence"></span>
+          </section>
+
+          <section class="metrics" id="metrics"></section>
+
+          <section class="market-grid" id="markets"></section>
+
+          <section class="panel comparison">
+            <div class="panel-heading horizontal">
+              <div><p class="eyebrow">TEAM COMPARISON</p><h2>Model inputs</h2></div>
+              <span id="league-summary"></span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Metric</th><th id="home-heading">Home</th><th id="away-heading">Away</th></tr></thead>
+                <tbody id="comparison-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>Football Data Lab</span><span>Explainable Poisson model / demo data</span></footer>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

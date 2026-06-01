@@ -1,0 +1,26 @@
+league,country,season,date,home_team,away_team,home_goals,away_goals,home_xg,away_xg
+Premier League,England,2025/26,2026-01-03,Manchester United,Tottenham,2,1,1.82,1.14
+Premier League,England,2025/26,2026-01-10,Arsenal,Manchester United,1,1,1.43,1.10
+Premier League,England,2025/26,2026-01-11,Tottenham,Chelsea,3,2,2.34,1.55
+Premier League,England,2025/26,2026-01-17,Chelsea,Arsenal,1,2,1.21,1.76
+Premier League,England,2025/26,2026-01-24,Manchester United,Chelsea,2,2,1.73,1.62
+Premier League,England,2025/26,2026-01-25,Arsenal,Tottenham,2,0,1.91,0.84
+Premier League,England,2025/26,2026-01-31,Tottenham,Manchester United,2,2,1.66,1.51
+Premier League,England,2025/26,2026-02-01,Chelsea,Arsenal,0,1,0.88,1.34
+Premier League,England,2025/26,2026-02-07,Manchester United,Arsenal,1,0,1.16,0.92
+Premier League,England,2025/26,2026-02-08,Tottenham,Chelsea,1,1,1.44,1.20
+Premier League,England,2025/26,2026-02-14,Chelsea,Manchester United,2,1,1.57,1.02
+Premier League,England,2025/26,2026-02-15,Arsenal,Tottenham,3,1,2.22,1.13
+Premier League,England,2025/26,2026-02-21,Manchester United,Tottenham,3,2,2.08,1.61
+Premier League,England,2025/26,2026-02-22,Arsenal,Chelsea,2,1,1.76,1.19
+Premier League,England,2025/26,2026-02-28,Tottenham,Arsenal,2,2,1.74,1.70
+Premier League,England,2025/26,2026-03-01,Chelsea,Manchester United,0,2,0.96,1.48
+Premier League,England,2025/26,2026-03-07,Manchester United,Arsenal,2,2,1.50,1.38
+Premier League,England,2025/26,2026-03-08,Tottenham,Chelsea,3,1,2.07,1.08
+Premier League,England,2025/26,2026-03-14,Chelsea,Tottenham,2,2,1.49,1.62
+Premier League,England,2025/26,2026-03-15,Arsenal,Manchester United,1,0,1.26,0.79
+Premier League,England,2025/26,2026-03-21,Manchester United,Chelsea,3,1,2.15,0.98
+Premier League,England,2025/26,2026-03-22,Tottenham,Arsenal,1,2,1.32,1.65
+Premier League,England,2025/26,2026-03-28,Chelsea,Arsenal,1,1,1.12,1.24
+Premier League,England,2025/26,2026-03-29,Tottenham,Manchester United,2,3,1.71,2.01
+
