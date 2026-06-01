@@ -1,0 +1,3 @@
+league,country,season,team,matches_played,home_matches,away_matches,goals_scored,goals_conceded,home_goals_scored,home_goals_conceded,away_goals_scored,away_goals_conceded,over_15_pct,over_25_pct,clean_sheet_pct,failed_to_score_pct,xg_for,xg_against
+Premier League,England,2025/26,Example FC,20,10,10,1.55,1.20,1.80,1.00,1.30,1.40,75,55,30,15,1.62,1.18
+
