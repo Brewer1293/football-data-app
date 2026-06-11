@@ -454,7 +454,11 @@ function renderGroupInputs() {
     const fixtures = worldCupFixtures.map((fixture, index) => ({ ...fixture, index })).filter((fixture) => fixture.group === group);
     return `<section class="group-card"><h3>Group ${group}</h3>${fixtures.map((fixture) => {
       const score = predictorState.group[fixture.index] || {};
-      return `<div class="score-row" data-group-fixture="${fixture.index}"><span>${fixture.date}</span><strong>${fixture.home}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" aria-label="${fixture.home} goals" /><strong>${fixture.away}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" aria-label="${fixture.away} goals" /></div>`;
+      return `<div class="score-row" data-group-fixture="${fixture.index}">
+        <span class="score-date">${fixture.date}</span>
+        <label class="score-team"><strong>${fixture.home}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" aria-label="${fixture.home} goals" /></label>
+        <label class="score-team"><strong>${fixture.away}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" aria-label="${fixture.away} goals" /></label>
+      </div>`;
     }).join("")}</section>`;
   }).join("");
 }
