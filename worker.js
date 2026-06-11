@@ -30,9 +30,12 @@ export default {
 
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
 const ODDS_API_IO_BASE_URL = "https://api.odds-api.io/v3";
+const SPORTS_GAME_ODDS_BASE_URL = "https://api.sportsgameodds.com/v2";
 const ODDS_API_IO_BOOKMAKERS = "Bet365";
 const ODDS_API_IO_EVENTS_CACHE_SECONDS = 900;
 const ODDS_API_IO_ODDS_CACHE_SECONDS = 600;
+const SPORTS_GAME_ODDS_LEAGUES_CACHE_SECONDS = 86400;
+const SPORTS_GAME_ODDS_EVENTS_CACHE_SECONDS = 900;
 const API_FOOTBALL_FIXTURES_CACHE_SECONDS = 900;
 const API_FOOTBALL_ODDS_CACHE_SECONDS = 600;
 const WORLD_CUP_ODDS_CACHE_SECONDS = 600;
@@ -82,6 +85,23 @@ async function fetchWorldCupOdds(url, env) {
     }
   } else {
     warnings.push("Odds-API.io key is not configured.");
+  }
+
+  if (env.SPORTSGAMEODDS_KEY) {
+    try {
+      const quotes = await fetchSportsGameOddsFixtureOdds(env.SPORTSGAMEODDS_KEY, fixtureDate, homeTeam, awayTeam, env.SPORTSGAMEODDS_WORLD_CUP_LEAGUE_ID);
+      const response = jsonResponse(
+        { quotes, best: bestQuotes(quotes), warnings },
+        200,
+        responseCacheSeconds,
+      );
+      await caches.default.put(cacheKey, response.clone());
+      return response;
+    } catch (error) {
+      warnings.push(`SportsGameOdds: ${error.message}`);
+    }
+  } else {
+    warnings.push("SportsGameOdds key is not configured.");
   }
 
   if (env.API_FOOTBALL_KEY) {
@@ -161,6 +181,41 @@ async function fetchApiFootballFixtureOdds(apiKey, fixtureDate, homeTeam, awayTe
   throw new Error("fixture found but no Over 1.5 or Over 2.5 prices were returned.");
 }
 
+async function fetchSportsGameOddsFixtureOdds(apiKey, fixtureDate, homeTeam, awayTeam, configuredLeagueId) {
+  const leagueID = configuredLeagueId || await detectSportsGameOddsWorldCupLeague(apiKey);
+  const date = new Date(`${fixtureDate}T00:00:00Z`);
+  const params = {
+    leagueID,
+    oddsAvailable: true,
+    finalized: false,
+    startsAfter: `${offsetDate(date, -1)}T00:00:00Z`,
+    startsBefore: `${offsetDate(date, 2)}T00:00:00Z`,
+    includeAltLines: true,
+    limit: 50,
+  };
+  const payload = await cachedJson(
+    cacheUrl("sports-game-odds-events", params),
+    SPORTS_GAME_ODDS_EVENTS_CACHE_SECONDS,
+    () => sportsGameOddsGet("events", apiKey, params),
+  );
+  const fixture = findSportsGameOddsFixture(payload.data || [], homeTeam, awayTeam);
+  const quotes = parseSportsGameOddsQuotes(fixture, fixtureDate, homeTeam, awayTeam);
+  if (!quotes.length) throw new Error("fixture found but no Over 1.5 or Over 2.5 prices were returned.");
+  return quotes;
+}
+
+async function detectSportsGameOddsWorldCupLeague(apiKey) {
+  const payload = await cachedJson(
+    cacheUrl("sports-game-odds-leagues", { sportID: "SOCCER" }),
+    SPORTS_GAME_ODDS_LEAGUES_CACHE_SECONDS,
+    () => sportsGameOddsGet("leagues", apiKey, { sportID: "SOCCER" }),
+  );
+  const leagues = payload.data || [];
+  const league = leagues.find((item) => /world|fifa|cup|international/i.test(`${item.leagueID} ${item.name || ""} ${item.longName || ""}`));
+  if (!league) throw new Error("World Cup soccer league is not exposed by this key yet.");
+  return league.leagueID;
+}
+
 async function fetchApiFootballFixtures(apiKey, fixtureDate) {
   const date = new Date(`${fixtureDate}T00:00:00Z`);
   const dates = [fixtureDate, offsetDate(date, 1), offsetDate(date, -1)];
@@ -183,6 +238,16 @@ async function oddsApiIoGet(endpoint, apiKey, params) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(await providerError(response));
   return response.json();
+}
+
+async function sportsGameOddsGet(endpoint, apiKey, params) {
+  const url = new URL(`${SPORTS_GAME_ODDS_BASE_URL}/${endpoint}`);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+  const response = await fetch(url, { headers: { "x-api-key": apiKey } });
+  if (!response.ok) throw new Error(await providerError(response));
+  const payload = await response.json();
+  if (payload.success === false) throw new Error(payload.error || "request failed.");
+  return payload;
 }
 
 async function cachedJson(cacheKey, ttlSeconds, load) {
@@ -236,6 +301,17 @@ function findApiFootballFixture(events, homeTeam, awayTeam) {
   return fixture;
 }
 
+function findSportsGameOddsFixture(events, homeTeam, awayTeam) {
+  const targetHome = teamKeys(homeTeam);
+  const targetAway = teamKeys(awayTeam);
+  const fixture = events.find((event) => (
+    intersects(sportsGameOddsTeamKeys(event.teams?.home), targetHome)
+    && intersects(sportsGameOddsTeamKeys(event.teams?.away), targetAway)
+  ));
+  if (!fixture) throw new Error(`no matching fixture for ${homeTeam} vs ${awayTeam}.`);
+  return fixture;
+}
+
 function parseOddsApiIoQuotes(payload, fixtureDate, homeTeam, awayTeam) {
   const quotes = [];
   Object.entries(payload.bookmakers || {}).forEach(([bookmaker, markets]) => {
@@ -266,6 +342,21 @@ function parseApiFootballPrematchQuotes(payload, fixtureId, fixtureDate, homeTea
           }
         });
       });
+    });
+  });
+  return quotes;
+}
+
+function parseSportsGameOddsQuotes(event, fixtureDate, homeTeam, awayTeam) {
+  const quotes = [];
+  Object.values(event.odds || {}).forEach((odd) => {
+    if (odd.statID !== "points" || odd.betTypeID !== "ou" || odd.sideID !== "over") return;
+    Object.entries(odd.byBookmaker || {}).forEach(([bookmaker, value]) => {
+      const appMarket = value.available ? MARKET_LINES[String(value.overUnder)] : null;
+      const decimalOdds = appMarket ? americanToDecimal(value.odds) : null;
+      if (appMarket && decimalOdds) {
+        quotes.push(quote(event.eventID, fixtureDate, homeTeam, awayTeam, bookmaker, appMarket, decimalOdds, Boolean(event.status?.live), value.lastUpdatedAt, "sportsgameodds"));
+      }
     });
   });
   return quotes;
@@ -332,6 +423,20 @@ function teamKeys(name) {
   return keys;
 }
 
+function sportsGameOddsTeamKeys(team) {
+  const keys = new Set();
+  [
+    team?.teamID,
+    team?.name,
+    team?.names?.long,
+    team?.names?.medium,
+    team?.names?.short,
+  ].filter(Boolean).forEach((name) => {
+    teamKeys(name).forEach((key) => keys.add(key));
+  });
+  return keys;
+}
+
 function intersects(first, second) {
   for (const key of first) {
     if (second.has(key)) return true;
@@ -341,6 +446,12 @@ function intersects(first, second) {
 
 function isProviderRateLimitError(message) {
   return /rate limit|quota|too many requests|429/i.test(message);
+}
+
+function americanToDecimal(value) {
+  const odds = Number(value);
+  if (!Number.isFinite(odds) || odds === 0) return null;
+  return odds > 0 ? 1 + odds / 100 : 1 + 100 / Math.abs(odds);
 }
 
 function offsetDate(date, days) {
