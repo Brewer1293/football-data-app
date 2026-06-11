@@ -20,8 +20,16 @@ INTERNATIONAL_RESULTS_URL = (
 WORLD_CUP_2026_URL = (
     "https://raw.githubusercontent.com/openfootball/worldcup/master/2026--usa/cup.txt"
 )
-MODEL_VERSION = "international-elo-poisson-v1"
+MODEL_VERSION = "international-elo-poisson-v2"
 HOST_TEAMS = {"Canada", "Mexico", "USA"}
+FORM_SHRINK_MATCHES = 12
+ATTACK_DEFENCE_FACTOR_MIN = 0.72
+ATTACK_DEFENCE_FACTOR_MAX = 1.32
+TOTAL_BASELINE_WEIGHT = 0.28
+ELO_GOAL_SHARE_DIVISOR = 1400
+HOST_GOAL_SHARE_BOOST = 1.04
+TOTAL_GOALS_MIN = 1.35
+TOTAL_GOALS_MAX = 3.35
 TEAM_ALIASES = {
     "Bosnia & Herzegovina": "Bosnia and Herzegovina",
     "USA": "United States",
@@ -255,6 +263,51 @@ def _factorial(number: int) -> int:
     return result
 
 
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(value, upper))
+
+
+def _shrunk_rate(rate: float, baseline: float, matches: int) -> float:
+    weight = matches / (matches + FORM_SHRINK_MATCHES)
+    return baseline + (rate - baseline) * weight
+
+
+def _rate_factor(rate: float, baseline: float, matches: int) -> float:
+    shrunk = _shrunk_rate(rate, baseline, matches)
+    return _clamp(
+        shrunk / baseline,
+        ATTACK_DEFENCE_FACTOR_MIN,
+        ATTACK_DEFENCE_FACTOR_MAX,
+    )
+
+
+def _expected_world_cup_goals(
+    first: InternationalTeamStats,
+    second: InternationalTeamStats,
+    baseline: float,
+    team_a: str,
+    team_b: str,
+) -> tuple[float, float]:
+    first_attack = _rate_factor(first.weighted_goals_for, baseline, first.matches)
+    first_defence = _rate_factor(first.weighted_goals_against, baseline, first.matches)
+    second_attack = _rate_factor(second.weighted_goals_for, baseline, second.matches)
+    second_defence = _rate_factor(second.weighted_goals_against, baseline, second.matches)
+    raw_first = baseline * first_attack * second_defence
+    raw_second = baseline * second_attack * first_defence
+    if team_a in HOST_TEAMS:
+        raw_first *= HOST_GOAL_SHARE_BOOST
+    if team_b in HOST_TEAMS:
+        raw_second *= HOST_GOAL_SHARE_BOOST
+    raw_total = raw_first + raw_second
+    total = raw_total * (1 - TOTAL_BASELINE_WEIGHT) + baseline * 2 * TOTAL_BASELINE_WEIGHT
+    total = _clamp(total, TOTAL_GOALS_MIN, TOTAL_GOALS_MAX)
+    elo_factor = exp((first.elo - second.elo) / ELO_GOAL_SHARE_DIVISOR)
+    share_first = (raw_first * elo_factor) / (raw_first * elo_factor + raw_second)
+    expected_first = _clamp(total * share_first, 0.15, 3.2)
+    expected_second = _clamp(total - expected_first, 0.15, 3.2)
+    return expected_first, expected_second
+
+
 def analyze_world_cup_fixture(
     connection: sqlite3.Connection, team_a: str, team_b: str, as_of: date | None = None
 ) -> dict:
@@ -274,17 +327,9 @@ def analyze_world_cup_fixture(
     second = _team_stats(TEAM_ALIASES.get(team_b, team_b), rows, ratings, cutoff)
     international_average = sum(row["home_goals"] + row["away_goals"] for row in rows[-5000:]) / min(len(rows), 5000)
     baseline = international_average / 2
-    expected_first = baseline * (first.weighted_goals_for / baseline) * (second.weighted_goals_against / baseline)
-    expected_second = baseline * (second.weighted_goals_for / baseline) * (first.weighted_goals_against / baseline)
-    elo_factor = exp((first.elo - second.elo) / 1200)
-    expected_first *= elo_factor
-    expected_second /= elo_factor
-    if team_a in HOST_TEAMS:
-        expected_first *= 1.08
-    if team_b in HOST_TEAMS:
-        expected_second *= 1.08
-    expected_first = max(0.1, min(expected_first, 4.5))
-    expected_second = max(0.1, min(expected_second, 4.5))
+    expected_first, expected_second = _expected_world_cup_goals(
+        first, second, baseline, team_a, team_b
+    )
     total = expected_first + expected_second
     first_win, draw, second_win = _score_probabilities(expected_first, expected_second)
     prediction = WorldCupPrediction(

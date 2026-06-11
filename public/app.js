@@ -112,6 +112,7 @@ function parseWorldCupSchedule(text) {
 
 const aliases = { "Bosnia & Herzegovina":"Bosnia and Herzegovina", USA:"United States" };
 const hosts = new Set(["Canada", "Mexico", "USA"]);
+const formShrinkMatches = 12, factorMin = .72, factorMax = 1.32, totalBaselineWeight = .28, eloGoalShareDivisor = 1400, hostGoalShareBoost = 1.04, totalGoalsMin = 1.35, totalGoalsMax = 3.35;
 function scoreProbabilities(firstLambda, secondLambda) {
   let firstWin = 0, draw = 0, secondWin = 0;
   for (let first = 0; first < 10; first += 1) for (let second = 0; second < 10; second += 1) {
@@ -145,14 +146,27 @@ function internationalStats(team, rows, ratings) {
   return { team, matches:recent.length, goalsFor:values.reduce((sum,row)=>sum+row.goalsFor*row.weight,0)/weightTotal, goalsAgainst:values.reduce((sum,row)=>sum+row.goalsAgainst*row.weight,0)/weightTotal, over15:values.filter((row)=>total(row)>1).length/values.length, over25:values.filter((row)=>total(row)>2).length/values.length, cleanSheet:values.filter((row)=>row.goalsAgainst===0).length/values.length, failedToScore:values.filter((row)=>row.goalsFor===0).length/values.length, elo:ratings.get(named)||1500 };
 }
 
+function clamp(value, lower, upper) {
+  return Math.max(lower, Math.min(value, upper));
+}
+
+function rateFactor(rate, baseline, matches) {
+  const weight = matches / (matches + formShrinkMatches);
+  const shrunk = baseline + (rate - baseline) * weight;
+  return clamp(shrunk / baseline, factorMin, factorMax);
+}
+
 function predictWorldCupFixture(fixture, ratings = eloRatings(internationalRows)) {
   const first = internationalStats(fixture.home, internationalRows, ratings), second = internationalStats(fixture.away, internationalRows, ratings);
   const sample = internationalRows.slice(-5000), baseline = sample.reduce((sum,row)=>sum+row.homeGoals+row.awayGoals,0)/sample.length/2;
-  const eloFactor = Math.exp((first.elo - second.elo) / 1200);
-  let expectedFirst = baseline * (first.goalsFor / baseline) * (second.goalsAgainst / baseline) * eloFactor;
-  let expectedSecond = baseline * (second.goalsFor / baseline) * (first.goalsAgainst / baseline) / eloFactor;
-  if (hosts.has(fixture.home)) expectedFirst *= 1.08; if (hosts.has(fixture.away)) expectedSecond *= 1.08;
-  expectedFirst = Math.max(.1, Math.min(expectedFirst, 4.5)); expectedSecond = Math.max(.1, Math.min(expectedSecond, 4.5));
+  const firstAttack = rateFactor(first.goalsFor, baseline, first.matches), firstDefence = rateFactor(first.goalsAgainst, baseline, first.matches);
+  const secondAttack = rateFactor(second.goalsFor, baseline, second.matches), secondDefence = rateFactor(second.goalsAgainst, baseline, second.matches);
+  let rawFirst = baseline * firstAttack * secondDefence, rawSecond = baseline * secondAttack * firstDefence;
+  if (hosts.has(fixture.home)) rawFirst *= hostGoalShareBoost; if (hosts.has(fixture.away)) rawSecond *= hostGoalShareBoost;
+  const rawTotal = rawFirst + rawSecond, eloFactor = Math.exp((first.elo - second.elo) / eloGoalShareDivisor);
+  const calibratedTotal = clamp(rawTotal * (1 - totalBaselineWeight) + baseline * 2 * totalBaselineWeight, totalGoalsMin, totalGoalsMax);
+  const firstShare = rawFirst * eloFactor / (rawFirst * eloFactor + rawSecond);
+  let expectedFirst = clamp(calibratedTotal * firstShare, .15, 3.2), expectedSecond = clamp(calibratedTotal - expectedFirst, .15, 3.2);
   const total = expectedFirst + expectedSecond, outcomes = scoreProbabilities(expectedFirst, expectedSecond);
   return { first, second, expectedFirst, expectedSecond, total, outcomes, over15: poissonOver(total, 1), over25: poissonOver(total, 2), confidence: Math.min(first.matches, second.matches) >= 15 ? "Medium" : "Low" };
 }
@@ -216,7 +230,7 @@ function valueFixtures() {
 function valueCell(quote, probability) {
   if (!quote) return `<span class="muted-cell">No price</span>`;
   const result = oddsResult(quote.decimalOdds, probability);
-  return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Model ${num(1 / probability)} / odds ${quote.decimalOdds.toFixed(2)}</small></div>`;
+  return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Fair ${num(1 / probability)} / odds ${quote.decimalOdds.toFixed(2)}</small></div>`;
 }
 
 function edgeCell(quote, probability) {
