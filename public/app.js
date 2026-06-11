@@ -186,8 +186,9 @@ function analyzeWorldCup() {
   }
 }
 
-async function getWorldCupOdds(fixture) {
+async function getWorldCupOdds(fixture, options = {}) {
   const params = new URLSearchParams({ date: fixture.date, home: fixture.home, away: fixture.away });
+  if (options.snapshotDate) params.set("snapshotDate", options.snapshotDate);
   const response = await fetch(`/api/world-cup-odds?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || "No provider odds are available for this fixture yet.");
@@ -259,6 +260,8 @@ async function refreshValueBoard() {
   const status = byId("value-load-status");
   const body = byId("value-board-body");
   const fixtures = valueFixtures();
+  const snapshotDate = localIsoDate();
+  const windowEnd = localIsoDate(addDays(new Date(), 2));
   if (!fixtures.length) {
     status.textContent = "No World Cup fixtures in the next 3 days.";
     body.innerHTML = `<tr><td colspan="8">No fixtures found for this window.</td></tr>`;
@@ -266,7 +269,7 @@ async function refreshValueBoard() {
   }
   const ratings = eloRatings(internationalRows);
   button.disabled = true;
-  status.textContent = `Scanning ${fixtures.length} fixtures...`;
+  status.textContent = `Loading ${snapshotDate} odds snapshot for ${fixtures.length} fixtures...`;
   body.innerHTML = fixtures.map((fixture) => `<tr>${fixtureLabelCells(fixture)}<td colspan="6">Fetching odds...</td></tr>`).join("");
   const rows = [];
   let rateLimitMessage = "";
@@ -277,7 +280,7 @@ async function refreshValueBoard() {
     }
     try {
       const prediction = predictWorldCupFixture(fixture, ratings);
-      const best = await getWorldCupOdds(fixture);
+      const best = await getWorldCupOdds(fixture, { snapshotDate });
       rows.push(`<tr>${fixtureLabelCells(fixture)}<td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
     } catch (error) {
       if (isRateLimitError(error.message)) {
@@ -288,7 +291,7 @@ async function refreshValueBoard() {
     body.innerHTML = rows.join("");
     await wait(1100);
   }
-  status.textContent = rateLimitMessage || `${fixtures.length} fixtures scanned for ${localIsoDate()} to ${localIsoDate(addDays(new Date(), 2))}.`;
+  status.textContent = rateLimitMessage || `${fixtures.length} fixtures scanned for ${snapshotDate} to ${windowEnd}. Daily snapshot ${snapshotDate}.`;
   button.disabled = false;
 }
 

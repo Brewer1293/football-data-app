@@ -36,6 +36,7 @@ const ODDS_API_IO_ODDS_CACHE_SECONDS = 600;
 const API_FOOTBALL_FIXTURES_CACHE_SECONDS = 900;
 const API_FOOTBALL_ODDS_CACHE_SECONDS = 600;
 const WORLD_CUP_ODDS_CACHE_SECONDS = 600;
+const WORLD_CUP_VALUE_ODDS_CACHE_SECONDS = 172800;
 const GOALS_OVER_UNDER_BET_ID = 5;
 const MARKET_LINES = { "1.5": "over_1_5", "2.5": "over_2_5" };
 const TEAM_ALIASES = {
@@ -51,10 +52,17 @@ async function fetchWorldCupOdds(url, env) {
   const fixtureDate = url.searchParams.get("date");
   const homeTeam = url.searchParams.get("home");
   const awayTeam = url.searchParams.get("away");
+  const snapshotDate = url.searchParams.get("snapshotDate");
   if (!fixtureDate || !homeTeam || !awayTeam) {
     return jsonResponse({ error: "Missing date, home or away fixture parameter." }, 400);
   }
-  const cacheKey = new Request(cacheUrl("world-cup-odds", { fixtureDate, homeTeam, awayTeam }));
+  if (snapshotDate && !/^\d{4}-\d{2}-\d{2}$/.test(snapshotDate)) {
+    return jsonResponse({ error: "Invalid snapshotDate parameter." }, 400);
+  }
+  const cacheScope = snapshotDate ? "world-cup-value-odds" : "world-cup-odds";
+  const cacheParams = snapshotDate ? { fixtureDate, homeTeam, awayTeam, snapshotDate } : { fixtureDate, homeTeam, awayTeam };
+  const responseCacheSeconds = snapshotDate ? WORLD_CUP_VALUE_ODDS_CACHE_SECONDS : WORLD_CUP_ODDS_CACHE_SECONDS;
+  const cacheKey = new Request(cacheUrl(cacheScope, cacheParams));
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
@@ -65,7 +73,7 @@ async function fetchWorldCupOdds(url, env) {
       const response = jsonResponse(
         { quotes, best: bestQuotes(quotes), warnings },
         200,
-        WORLD_CUP_ODDS_CACHE_SECONDS,
+        responseCacheSeconds,
       );
       await caches.default.put(cacheKey, response.clone());
       return response;
@@ -82,7 +90,7 @@ async function fetchWorldCupOdds(url, env) {
       const response = jsonResponse(
         { quotes, best: bestQuotes(quotes), warnings },
         200,
-        WORLD_CUP_ODDS_CACHE_SECONDS,
+        responseCacheSeconds,
       );
       await caches.default.put(cacheKey, response.clone());
       return response;
