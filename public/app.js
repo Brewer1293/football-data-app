@@ -8,7 +8,10 @@ const positive = (value, fallback) => Math.max(Number(value ?? fallback), 0.05);
 const average = (rows, key) => rows.reduce((total, row) => total + row[key], 0) / rows.length;
 const metric = (label, value, note) => `<article class="metric"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
 const comparisonRow = (label, first, second) => `<tr><td>${label}</td><td>${first}</td><td>${second}</td></tr>`;
-const oddsResult = (odds, probability) => ({ implied: 1 / odds, ev: odds * probability - 1, value: probability > 1 / odds });
+const oddsResult = (odds, probability) => {
+  const implied = 1 / odds;
+  return { implied, edge: probability - implied, ev: odds * probability - 1, value: probability > implied };
+};
 const addDays = (date, days) => { const next = new Date(date); next.setDate(next.getDate() + days); return next; };
 const localIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const market = (label, probability, odds) => {
@@ -216,6 +219,13 @@ function valueCell(quote, probability) {
   return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Model ${pct(probability)} / implied ${pct(result.implied)}</small></div>`;
 }
 
+function edgeCell(quote, probability) {
+  if (!quote) return `<span class="muted-cell">-</span>`;
+  const edge = oddsResult(quote.decimalOdds, probability).edge;
+  const signed = `${edge >= 0 ? "+" : ""}${pct(edge)}`;
+  return `<strong class="edge-score ${edge > 0 ? "positive" : "negative"}">${signed}</strong>`;
+}
+
 function oddsCell(quote) {
   return quote ? `<strong>${quote.decimalOdds.toFixed(2)}</strong><small>${quote.bookmaker}</small>` : `<span class="muted-cell">-</span>`;
 }
@@ -228,21 +238,21 @@ async function refreshValueBoard() {
   const fixtures = valueFixtures();
   if (!fixtures.length) {
     status.textContent = "No World Cup fixtures in the next 3 days.";
-    body.innerHTML = `<tr><td colspan="6">No fixtures found for this window.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">No fixtures found for this window.</td></tr>`;
     return;
   }
   const ratings = eloRatings(internationalRows);
   button.disabled = true;
   status.textContent = `Scanning ${fixtures.length} fixtures...`;
-  body.innerHTML = fixtures.map((fixture) => `<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="4">Fetching odds...</td></tr>`).join("");
+  body.innerHTML = fixtures.map((fixture) => `<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="6">Fetching odds...</td></tr>`).join("");
   const rows = [];
   for (const fixture of fixtures) {
     try {
       const prediction = predictWorldCupFixture(fixture, ratings);
       const best = await getWorldCupOdds(fixture);
-      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td></tr>`);
+      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
     } catch (error) {
-      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="4"><span class="muted-cell">${error.message}</span></td></tr>`);
+      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="6"><span class="muted-cell">${error.message}</span></td></tr>`);
     }
     body.innerHTML = rows.join("");
   }
