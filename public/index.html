@@ -41,6 +41,7 @@
         <button class="view-tab" data-view="world-cup" type="button">World Cup 2026</button>
         <button class="view-tab" data-view="value" type="button">Value board</button>
         <button class="view-tab" data-view="predictor" type="button">Tournament predictor</button>
+        <button class="view-tab" data-view="model-prediction" type="button">Model prediction</button>
       </nav>
 
       <section id="league-view" class="model-view">
@@ -146,6 +147,33 @@
           <section class="panel predictor-panel">
             <div class="panel-heading horizontal"><div><p class="eyebrow">KNOCKOUTS</p><h2>Bracket</h2></div><span id="predictor-knockout-status"></span></div>
             <div id="predictor-bracket" class="bracket-grid"></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="model-prediction-view" class="model-view is-hidden">
+        <section class="world-cup-intro">
+          <div><p class="eyebrow">MODEL RUN / AUTO BRACKET</p><h2>World Cup model prediction</h2><p>The international model predicts every group game, seeds the knockouts and plays the tournament through to a winner.</p></div>
+          <span class="dataset-note" id="model-prediction-load-status">Select this view to run the model bracket.</span>
+        </section>
+        <section class="predictor-layout">
+          <section class="panel predictor-toolbar">
+            <div><p class="eyebrow">MODEL CHAMPION</p><h2 id="model-prediction-winner">Running model...</h2><p id="model-prediction-progress">Generated from expected goals and match outcome probabilities.</p></div>
+            <button id="model-prediction-refresh-button" class="secondary-button inline-button" type="button" disabled>Rerun model</button>
+          </section>
+          <section class="predictor-grid">
+            <section class="panel predictor-panel">
+              <div class="panel-heading horizontal"><div><p class="eyebrow">GROUP STAGE</p><h2>Predicted scores</h2></div><span id="model-prediction-group-status"></span></div>
+              <div id="model-prediction-groups" class="predictor-groups"></div>
+            </section>
+            <section class="panel predictor-panel">
+              <div class="panel-heading horizontal"><div><p class="eyebrow">TABLES</p><h2>Model qualifiers</h2></div><span>Top two plus best eight thirds</span></div>
+              <div id="model-prediction-standings" class="standings-grid"></div>
+            </section>
+          </section>
+          <section class="panel predictor-panel">
+            <div class="panel-heading horizontal"><div><p class="eyebrow">KNOCKOUTS</p><h2>Predicted bracket</h2></div><span id="model-prediction-knockout-status"></span></div>
+            <div id="model-prediction-bracket" class="bracket-grid"></div>
           </section>
         </section>
       </section>

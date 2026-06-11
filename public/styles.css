@@ -35,6 +35,7 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .score-control button:hover:not(:disabled) { background:rgba(249,115,22,.16); color:var(--text); }
 .score-control button:disabled { cursor:not-allowed; opacity:.35; }
 .score-control output { display:grid; min-width:40px; height:32px; place-items:center; border-right:1px solid var(--line); border-left:1px solid var(--line); color:var(--text); font-size:13px; font-weight:800; }
+.score-badge { display:grid; width:44px; height:32px; place-items:center; justify-self:end; border:1px solid var(--line); border-radius:8px; color:var(--text); background:#1d1d22; font-size:13px; font-weight:800; }
 .standings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .standing-card { padding:10px; min-width:0; }
 .standing-card h3 { display:flex; justify-content:space-between; gap:8px; }
