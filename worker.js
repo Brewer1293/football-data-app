@@ -101,7 +101,11 @@ async function fetchWorldCupOdds(url, env) {
     warnings.push("API-Football key is not configured.");
   }
 
-  return jsonResponse({ error: warnings.join(" "), warnings }, 503);
+  const error = warnings.join(" ");
+  const noPrice = !isProviderRateLimitError(error) && /no published market|no matching fixture|no Over 1\.5 or Over 2\.5 prices|no Over 1\.5 or Over 2\.5 prices were returned/i.test(error);
+  const response = jsonResponse({ error, warnings, noPrice }, noPrice ? 404 : 503, noPrice && snapshotDate ? responseCacheSeconds : 0);
+  if (noPrice && snapshotDate) await caches.default.put(cacheKey, response.clone());
+  return response;
 }
 
 async function fetchOddsApiIoFixtureOdds(apiKey, fixtureDate, homeTeam, awayTeam) {
@@ -333,6 +337,10 @@ function intersects(first, second) {
     if (second.has(key)) return true;
   }
   return false;
+}
+
+function isProviderRateLimitError(message) {
+  return /rate limit|quota|too many requests|429/i.test(message);
 }
 
 function offsetDate(date, days) {

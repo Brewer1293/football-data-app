@@ -12,7 +12,6 @@ const oddsResult = (odds, probability) => {
   const implied = 1 / odds;
   return { implied, edge: probability - implied, ev: odds * probability - 1, value: probability > implied };
 };
-const addDays = (date, days) => { const next = new Date(date); next.setDate(next.getDate() + days); return next; };
 const localIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const market = (label, probability, odds) => {
@@ -191,7 +190,11 @@ async function getWorldCupOdds(fixture, options = {}) {
   if (options.snapshotDate) params.set("snapshotDate", options.snapshotDate);
   const response = await fetch(`/api/world-cup-odds?${params.toString()}`);
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "No provider odds are available for this fixture yet.");
+  if (!response.ok) {
+    const error = new Error(payload.error || "No provider odds are available for this fixture yet.");
+    error.noPrice = Boolean(payload.noPrice);
+    throw error;
+  }
   return payload.best || {};
 }
 
@@ -224,9 +227,8 @@ async function fetchWorldCupOdds() {
 }
 
 function valueFixtures() {
-  const start = localIsoDate();
-  const end = localIsoDate(addDays(new Date(), 2));
-  return worldCupFixtures.filter((fixture) => fixture.date >= start && fixture.date <= end);
+  const today = localIsoDate();
+  return worldCupFixtures.filter((fixture) => fixture.date >= today);
 }
 
 function valueCell(quote, probability) {
@@ -261,37 +263,45 @@ async function refreshValueBoard() {
   const body = byId("value-board-body");
   const fixtures = valueFixtures();
   const snapshotDate = localIsoDate();
-  const windowEnd = localIsoDate(addDays(new Date(), 2));
   if (!fixtures.length) {
-    status.textContent = "No World Cup fixtures in the next 3 days.";
-    body.innerHTML = `<tr><td colspan="8">No fixtures found for this window.</td></tr>`;
+    status.textContent = "No remaining World Cup group fixtures.";
+    body.innerHTML = `<tr><td colspan="8">No upcoming fixtures found.</td></tr>`;
     return;
   }
   const ratings = eloRatings(internationalRows);
   button.disabled = true;
-  status.textContent = `Loading ${snapshotDate} odds snapshot for ${fixtures.length} fixtures...`;
-  body.innerHTML = fixtures.map((fixture) => `<tr>${fixtureLabelCells(fixture)}<td colspan="6">Fetching odds...</td></tr>`).join("");
+  status.textContent = `Loading ${snapshotDate} odds snapshot from upcoming fixtures...`;
+  body.innerHTML = `<tr><td colspan="8">Scanning upcoming fixtures for published goal markets...</td></tr>`;
   const rows = [];
   let rateLimitMessage = "";
+  let checked = 0;
   for (const fixture of fixtures) {
     if (rateLimitMessage) {
-      rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${rateLimitMessage}</span></td></tr>`);
-      continue;
+      break;
     }
     try {
+      checked += 1;
       const prediction = predictWorldCupFixture(fixture, ratings);
       const best = await getWorldCupOdds(fixture, { snapshotDate });
+      if (!best.over_1_5 && !best.over_2_5) continue;
       rows.push(`<tr>${fixtureLabelCells(fixture)}<td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
     } catch (error) {
-      if (isRateLimitError(error.message)) {
-        rateLimitMessage = "Odds provider limit reached. Cached rows remain available; retry after the reset window.";
+      if (error.noPrice) {
+        body.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="8">Scanning upcoming fixtures for published goal markets...</td></tr>`;
+        await wait(1100);
+        continue;
       }
-      rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${rateLimitMessage || error.message}</span></td></tr>`);
+      if (isRateLimitError(error.message)) {
+        rateLimitMessage = `${rows.length} priced fixtures loaded before the provider limit was reached. Retry after the reset window.`;
+      }
+      if (!rateLimitMessage) rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${error.message}</span></td></tr>`);
     }
-    body.innerHTML = rows.join("");
+    body.innerHTML = rows.length ? rows.join("") : `<tr><td colspan="8">Scanning upcoming fixtures for published goal markets...</td></tr>`;
     await wait(1100);
   }
-  status.textContent = rateLimitMessage || `${fixtures.length} fixtures scanned for ${snapshotDate} to ${windowEnd}. Daily snapshot ${snapshotDate}.`;
+  if (!rows.length && rateLimitMessage) body.innerHTML = `<tr><td colspan="8"><span class="muted-cell">${rateLimitMessage}</span></td></tr>`;
+  if (!rows.length && !rateLimitMessage) body.innerHTML = `<tr><td colspan="8">No published Over 1.5 or Over 2.5 markets found yet.</td></tr>`;
+  status.textContent = rateLimitMessage || `${rows.length} priced fixtures found after checking ${checked} upcoming fixtures. Daily snapshot ${snapshotDate}.`;
   button.disabled = false;
 }
 
