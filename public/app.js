@@ -216,7 +216,7 @@ function valueFixtures() {
 function valueCell(quote, probability) {
   if (!quote) return `<span class="muted-cell">No price</span>`;
   const result = oddsResult(quote.decimalOdds, probability);
-  return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Model ${pct(probability)} / implied ${pct(result.implied)}</small></div>`;
+  return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Model ${num(1 / probability)} / odds ${quote.decimalOdds.toFixed(2)}</small></div>`;
 }
 
 function edgeCell(quote, probability) {
