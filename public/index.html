@@ -84,7 +84,9 @@
               <label><span>Odds: Over 1.5</span><input id="world-cup-odds-15" type="number" min="1.01" step="0.01" value="1.45" /></label>
               <label><span>Odds: Over 2.5</span><input id="world-cup-odds-25" type="number" min="1.01" step="0.01" value="2.10" /></label>
             </div>
+            <button id="world-cup-fetch-odds-button" class="secondary-button" type="button" disabled>Fetch latest odds</button>
             <button id="world-cup-analyse-button" class="primary-button" type="button" disabled>Run World Cup analysis</button>
+            <p id="world-cup-odds-status" class="quote-status">Provider odds load into the editable fields when available.</p>
             <p class="control-note">The international model uses each team’s weighted last 20 matches, local Elo ratings and a small adjustment for host nations Canada, Mexico and USA.</p>
           </aside>
 

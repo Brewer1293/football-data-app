@@ -161,6 +161,37 @@ function analyzeWorldCup() {
   }
 }
 
+async function fetchWorldCupOdds() {
+  const button = byId("world-cup-fetch-odds-button");
+  const status = byId("world-cup-odds-status");
+  const fixture = worldCupFixtures[Number(byId("world-cup-fixture").value)];
+  if (!fixture) return;
+  button.disabled = true;
+  status.textContent = "Fetching latest provider odds...";
+  try {
+    const params = new URLSearchParams({ date: fixture.date, home: fixture.home, away: fixture.away });
+    const response = await fetch(`/api/world-cup-odds?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "No provider odds are available for this fixture yet.");
+    const loaded = [];
+    if (payload.best?.over_1_5) {
+      byId("world-cup-odds-15").value = payload.best.over_1_5.decimalOdds.toFixed(2);
+      loaded.push(`Over 1.5 ${payload.best.over_1_5.decimalOdds.toFixed(2)} from ${payload.best.over_1_5.bookmaker}`);
+    }
+    if (payload.best?.over_2_5) {
+      byId("world-cup-odds-25").value = payload.best.over_2_5.decimalOdds.toFixed(2);
+      loaded.push(`Over 2.5 ${payload.best.over_2_5.decimalOdds.toFixed(2)} from ${payload.best.over_2_5.bookmaker}`);
+    }
+    if (!loaded.length) throw new Error("The provider responded but did not include Over 1.5 or Over 2.5 prices.");
+    status.textContent = loaded.join(" / ");
+    analyzeWorldCup();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = !worldCupReady;
+  }
+}
+
 async function loadWorldCup() {
   if (worldCupReady) return;
   byId("data-status").textContent = "Loading World Cup datasets";
@@ -170,7 +201,7 @@ async function loadWorldCup() {
     worldCupFixtures = parseWorldCupSchedule(schedule);
     internationalRows = parseCsv(results).map((row) => ({ date:row.date, home:row.home_team, away:row.away_team, homeGoals:Number(row.home_score), awayGoals:Number(row.away_score), tournament:row.tournament, neutral:String(row.neutral).toLowerCase()==="true" })).filter((row) => row.date && row.date < new Date().toISOString().slice(0,10) && row.home && row.away && Number.isFinite(row.homeGoals) && Number.isFinite(row.awayGoals));
     byId("world-cup-fixture").innerHTML = worldCupFixtures.map((fixture,index)=>`<option value="${index}">${fixture.date} / Group ${fixture.group} / ${fixture.home} vs ${fixture.away}</option>`).join("");
-    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; worldCupReady = true;
+    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; byId("world-cup-fetch-odds-button").disabled = false; worldCupReady = true;
     byId("data-status").textContent = "World Cup datasets ready"; byId("world-cup-load-status").textContent = `${internationalRows.length.toLocaleString()} internationals / ${worldCupFixtures.length} group fixtures`;
     analyzeWorldCup();
   } catch (error) {
@@ -191,5 +222,6 @@ byId("league-select").innerHTML = `<option>Premier League / 2025-26 demo</option
 fillTeams();
 byId("analyse-button").addEventListener("click", analyzeLeague);
 byId("world-cup-analyse-button").addEventListener("click", analyzeWorldCup);
+byId("world-cup-fetch-odds-button").addEventListener("click", fetchWorldCupOdds);
 byId("world-cup-fixture").addEventListener("change", analyzeWorldCup);
 analyzeLeague();
