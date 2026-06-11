@@ -544,23 +544,42 @@ function renderPredictor() {
   renderBracket(rounds);
 }
 
-function likelyScore(firstLambda, secondLambda, winner = "") {
-  let best = { first:0, second:0, probability:-1 };
-  for (let first = 0; first <= 7; first += 1) {
-    for (let second = 0; second <= 7; second += 1) {
-      if (winner === "first" && first <= second) continue;
-      if (winner === "second" && second <= first) continue;
-      const probability = poisson(firstLambda, first) * poisson(secondLambda, second);
-      if (probability > best.probability) best = { first, second, probability };
-    }
-  }
-  return best;
+function fixtureHash(value) {
+  return [...value].reduce((hash, char) => ((hash * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
 }
 
-function modelFixtureScore(home, away, ratings, knockout = false) {
+function outcomePick(prediction, key, knockout) {
+  if (knockout) return prediction.outcomes.firstWin >= prediction.outcomes.secondWin ? "first" : "second";
+  const options = [
+    { outcome:"first", probability:prediction.outcomes.firstWin },
+    { outcome:"draw", probability:prediction.outcomes.draw },
+    { outcome:"second", probability:prediction.outcomes.secondWin },
+  ].sort((first, second) => second.probability - first.probability);
+  const gap = options[0].probability - options[1].probability;
+  if (gap > .16) return options[0].outcome;
+  return options[fixtureHash(key) % Math.min(2, options.length)].outcome;
+}
+
+function likelyScore(firstLambda, secondLambda, outcome = "", key = "") {
+  const candidates = [];
+  for (let first = 0; first <= 7; first += 1) {
+    for (let second = 0; second <= 7; second += 1) {
+      if (outcome === "first" && first <= second) continue;
+      if (outcome === "second" && second <= first) continue;
+      if (outcome === "draw" && first !== second) continue;
+      const probability = poisson(firstLambda, first) * poisson(secondLambda, second);
+      candidates.push({ first, second, probability });
+    }
+  }
+  candidates.sort((first, second) => second.probability - first.probability || (second.first + second.second) - (first.first + first.second));
+  const top = candidates.filter((score) => score.probability >= candidates[0].probability * .38).slice(0, 8);
+  return top[fixtureHash(key) % top.length] || candidates[0];
+}
+
+function modelFixtureScore(home, away, ratings, knockout = false, key = `${home}-${away}`) {
   const prediction = predictWorldCupFixture({ home, away, group:"", date:"", venue:"" }, ratings);
-  const forcedWinner = knockout ? (prediction.outcomes.firstWin >= prediction.outcomes.secondWin ? "first" : "second") : "";
-  const score = likelyScore(prediction.expectedFirst, prediction.expectedSecond, forcedWinner);
+  const outcome = outcomePick(prediction, key, knockout);
+  const score = likelyScore(prediction.expectedFirst, prediction.expectedSecond, outcome, key);
   return {
     home: String(score.first),
     away: String(score.second),
@@ -573,7 +592,7 @@ function modelPredictionState() {
   const ratings = eloRatings(internationalRows);
   const state = { group: {}, knockout: {} };
   worldCupFixtures.forEach((fixture, index) => {
-    const score = modelFixtureScore(fixture.home, fixture.away, ratings);
+    const score = modelFixtureScore(fixture.home, fixture.away, ratings, false, `${fixture.date}-${fixture.home}-${fixture.away}`);
     state.group[index] = { home: score.home, away: score.away };
   });
   const tables = predictorTables(state);
@@ -581,7 +600,7 @@ function modelPredictionState() {
     const rounds = buildKnockout(tables, state);
     rounds[round].forEach((match) => {
       if (!match.home || !match.away || match.home.startsWith("3rd ") || match.away.startsWith("3rd ")) return;
-      const score = modelFixtureScore(match.home, match.away, ratings, true);
+      const score = modelFixtureScore(match.home, match.away, ratings, true, `M${match.match}-${match.home}-${match.away}`);
       state.knockout[match.match] = { home: score.home, away: score.away, winner: score.winner };
     });
   });
