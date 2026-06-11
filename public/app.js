@@ -14,6 +14,7 @@ const oddsResult = (odds, probability) => {
 };
 const addDays = (date, days) => { const next = new Date(date); next.setDate(next.getDate() + days); return next; };
 const localIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const market = (label, probability, odds) => {
   const result = oddsResult(odds, probability);
   return `<article class="market-card"><div class="market-head"><h3>${label}</h3><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Potential value" : "No model edge"}</span></div><div class="market-stats"><div><span>Model probability</span><strong>${pct(probability)}</strong></div><div><span>Implied probability</span><strong>${pct(result.implied)}</strong></div><div><span>Expected value</span><strong>${pct(result.ev)}</strong></div></div></article>`;
@@ -280,11 +281,12 @@ async function refreshValueBoard() {
       rows.push(`<tr>${fixtureLabelCells(fixture)}<td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
     } catch (error) {
       if (isRateLimitError(error.message)) {
-        rateLimitMessage = "Odds provider hourly limit reached. Cached rows remain available; retry after the reset window.";
+        rateLimitMessage = "Odds provider limit reached. Cached rows remain available; retry after the reset window.";
       }
       rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${rateLimitMessage || error.message}</span></td></tr>`);
     }
     body.innerHTML = rows.join("");
+    await wait(1100);
   }
   status.textContent = rateLimitMessage || `${fixtures.length} fixtures scanned for ${localIsoDate()} to ${localIsoDate(addDays(new Date(), 2))}.`;
   button.disabled = false;

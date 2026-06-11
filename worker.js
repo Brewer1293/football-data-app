@@ -33,6 +33,8 @@ const ODDS_API_IO_BASE_URL = "https://api.odds-api.io/v3";
 const ODDS_API_IO_BOOKMAKERS = "Bet365";
 const ODDS_API_IO_EVENTS_CACHE_SECONDS = 900;
 const ODDS_API_IO_ODDS_CACHE_SECONDS = 600;
+const API_FOOTBALL_FIXTURES_CACHE_SECONDS = 900;
+const API_FOOTBALL_ODDS_CACHE_SECONDS = 600;
 const WORLD_CUP_ODDS_CACHE_SECONDS = 600;
 const GOALS_OVER_UNDER_BET_ID = 5;
 const MARKET_LINES = { "1.5": "over_1_5", "2.5": "over_2_5" };
@@ -125,16 +127,41 @@ async function fetchOddsApiIoFixtureOdds(apiKey, fixtureDate, homeTeam, awayTeam
 }
 
 async function fetchApiFootballFixtureOdds(apiKey, fixtureDate, homeTeam, awayTeam) {
-  const fixtures = await apiFootballGet("fixtures", apiKey, { date: fixtureDate });
+  const fixtures = await fetchApiFootballFixtures(apiKey, fixtureDate);
   const fixture = findApiFootballFixture(fixtures.response || [], homeTeam, awayTeam);
   const fixtureId = Number(fixture.fixture.id);
-  const prematch = await apiFootballGet("odds", apiKey, { fixture: fixtureId, bet: GOALS_OVER_UNDER_BET_ID });
+  const prematchParams = { fixture: fixtureId, bet: GOALS_OVER_UNDER_BET_ID };
+  const prematch = await cachedJson(
+    cacheUrl("api-football-odds", prematchParams),
+    API_FOOTBALL_ODDS_CACHE_SECONDS,
+    () => apiFootballGet("odds", apiKey, prematchParams),
+  );
   const prematchQuotes = parseApiFootballPrematchQuotes(prematch, fixtureId, fixtureDate, homeTeam, awayTeam);
   if (prematchQuotes.length) return prematchQuotes;
-  const live = await apiFootballGet("odds/live", apiKey, { fixture: fixtureId });
+  const liveParams = { fixture: fixtureId };
+  const live = await cachedJson(
+    cacheUrl("api-football-live-odds", liveParams),
+    60,
+    () => apiFootballGet("odds/live", apiKey, liveParams),
+  );
   const liveQuotes = parseApiFootballLiveQuotes(live, fixtureId, fixtureDate, homeTeam, awayTeam);
   if (liveQuotes.length) return liveQuotes;
   throw new Error("fixture found but no Over 1.5 or Over 2.5 prices were returned.");
+}
+
+async function fetchApiFootballFixtures(apiKey, fixtureDate) {
+  const date = new Date(`${fixtureDate}T00:00:00Z`);
+  const dates = [fixtureDate, offsetDate(date, 1), offsetDate(date, -1)];
+  const responses = [];
+  for (const item of dates) {
+    const params = { date: item };
+    responses.push(await cachedJson(
+      cacheUrl("api-football-fixtures", params),
+      API_FOOTBALL_FIXTURES_CACHE_SECONDS,
+      () => apiFootballGet("fixtures", apiKey, params),
+    ));
+  }
+  return { response: responses.flatMap((payload) => payload.response || []) };
 }
 
 async function oddsApiIoGet(endpoint, apiKey, params) {
@@ -176,22 +203,22 @@ async function apiFootballGet(endpoint, apiKey, params) {
 }
 
 function findProviderFixture(events, homeTeam, awayTeam, homeKey, awayKey) {
-  const targetHome = normalizedTeam(homeTeam);
-  const targetAway = normalizedTeam(awayTeam);
+  const targetHome = teamKeys(homeTeam);
+  const targetAway = teamKeys(awayTeam);
   const fixture = events.find((event) => (
-    normalizedTeam(event[homeKey] || "") === targetHome
-    && normalizedTeam(event[awayKey] || "") === targetAway
+    intersects(teamKeys(event[homeKey] || ""), targetHome)
+    && intersects(teamKeys(event[awayKey] || ""), targetAway)
   ));
   if (!fixture) throw new Error(`no published market for ${homeTeam} vs ${awayTeam} on this date.`);
   return fixture;
 }
 
 function findApiFootballFixture(events, homeTeam, awayTeam) {
-  const targetHome = normalizedTeam(homeTeam);
-  const targetAway = normalizedTeam(awayTeam);
+  const targetHome = teamKeys(homeTeam);
+  const targetAway = teamKeys(awayTeam);
   const fixture = events.find((event) => (
-    normalizedTeam(event.teams?.home?.name || "") === targetHome
-    && normalizedTeam(event.teams?.away?.name || "") === targetAway
+    intersects(teamKeys(event.teams?.home?.name || ""), targetHome)
+    && intersects(teamKeys(event.teams?.away?.name || ""), targetAway)
   ));
   if (!fixture) throw new Error(`no matching fixture for ${homeTeam} vs ${awayTeam}.`);
   return fixture;
@@ -281,8 +308,23 @@ async function providerError(response) {
 }
 
 function normalizedTeam(name) {
-  const aliased = TEAM_ALIASES[name] || name;
-  return aliased.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function teamKeys(name) {
+  const keys = new Set([normalizedTeam(name)]);
+  if (TEAM_ALIASES[name]) keys.add(normalizedTeam(TEAM_ALIASES[name]));
+  Object.entries(TEAM_ALIASES)
+    .filter(([, aliased]) => normalizedTeam(aliased) === normalizedTeam(name))
+    .forEach(([original]) => keys.add(normalizedTeam(original)));
+  return keys;
+}
+
+function intersects(first, second) {
+  for (const key of first) {
+    if (second.has(key)) return true;
+  }
+  return false;
 }
 
 function offsetDate(date, days) {
