@@ -24,6 +24,8 @@ let teams = [];
 let worldCupFixtures = [];
 let internationalRows = [];
 let worldCupReady = false;
+const predictorStoreKey = "footballDataWorldCupPredictorV1";
+let predictorState = { group: {}, knockout: {} };
 
 function parseCsv(text) {
   const rows = [];
@@ -305,6 +307,233 @@ async function refreshValueBoard() {
   button.disabled = false;
 }
 
+const roundNames = { 32: "Round of 32", 16: "Round of 16", 8: "Quarterfinals", 4: "Semifinals", 2: "Final" };
+const roundOrder = [32, 16, 8, 4, 2];
+const roundOf32Slots = [
+  { match: 73, home: { type:"runner", group:"A" }, away: { type:"runner", group:"B" } },
+  { match: 74, home: { type:"winner", group:"E" }, away: { type:"third", groups:["A","B","C","D","F"] } },
+  { match: 75, home: { type:"winner", group:"F" }, away: { type:"runner", group:"C" } },
+  { match: 76, home: { type:"winner", group:"C" }, away: { type:"runner", group:"F" } },
+  { match: 77, home: { type:"winner", group:"I" }, away: { type:"third", groups:["C","D","F","G","H"] } },
+  { match: 78, home: { type:"runner", group:"E" }, away: { type:"runner", group:"I" } },
+  { match: 79, home: { type:"winner", group:"A" }, away: { type:"third", groups:["C","E","F","H","I"] } },
+  { match: 80, home: { type:"winner", group:"L" }, away: { type:"third", groups:["E","H","I","J","K"] } },
+  { match: 81, home: { type:"winner", group:"D" }, away: { type:"third", groups:["B","E","F","I","J"] } },
+  { match: 82, home: { type:"winner", group:"G" }, away: { type:"third", groups:["A","E","H","I","J"] } },
+  { match: 83, home: { type:"runner", group:"K" }, away: { type:"runner", group:"L" } },
+  { match: 84, home: { type:"winner", group:"H" }, away: { type:"runner", group:"J" } },
+  { match: 85, home: { type:"winner", group:"B" }, away: { type:"third", groups:["E","F","G","I","J"] } },
+  { match: 86, home: { type:"winner", group:"J" }, away: { type:"runner", group:"H" } },
+  { match: 87, home: { type:"winner", group:"K" }, away: { type:"third", groups:["D","E","I","J","L"] } },
+  { match: 88, home: { type:"runner", group:"D" }, away: { type:"runner", group:"G" } },
+];
+const knockoutLinks = {
+  16: [[73,75],[74,77],[76,78],[79,80],[83,84],[81,82],[86,88],[85,87]],
+  8: [[89,90],[93,94],[91,92],[95,96]],
+  4: [[97,98],[99,100]],
+  2: [[101,102]],
+};
+
+function loadPredictorState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(predictorStoreKey) || "{}");
+    predictorState = { group: saved.group || {}, knockout: saved.knockout || {} };
+  } catch {
+    predictorState = { group: {}, knockout: {} };
+  }
+}
+
+function savePredictorState() {
+  localStorage.setItem(predictorStoreKey, JSON.stringify(predictorState));
+}
+
+function groupTeams() {
+  return [..."ABCDEFGHIJKL"].reduce((groups, group) => {
+    groups[group] = [...new Set(worldCupFixtures.filter((fixture) => fixture.group === group).flatMap((fixture) => [fixture.home, fixture.away]))];
+    return groups;
+  }, {});
+}
+
+function blankStanding(team, group) {
+  return { team, group, played:0, wins:0, draws:0, losses:0, gf:0, ga:0, gd:0, points:0 };
+}
+
+function groupScore(index) {
+  const score = predictorState.group[index] || {};
+  const home = score.home === "" || score.home == null ? null : Number(score.home);
+  const away = score.away === "" || score.away == null ? null : Number(score.away);
+  return Number.isInteger(home) && Number.isInteger(away) && home >= 0 && away >= 0 ? { home, away } : null;
+}
+
+function applyResult(row, gf, ga) {
+  row.played += 1; row.gf += gf; row.ga += ga; row.gd = row.gf - row.ga;
+  if (gf > ga) { row.wins += 1; row.points += 3; }
+  else if (gf === ga) { row.draws += 1; row.points += 1; }
+  else row.losses += 1;
+}
+
+function compareRows(first, second) {
+  return second.points - first.points || second.gd - first.gd || second.gf - first.gf || first.ga - second.ga || first.team.localeCompare(second.team);
+}
+
+function predictorTables() {
+  const teamsByGroup = groupTeams();
+  const tables = Object.fromEntries(Object.entries(teamsByGroup).map(([group, teams]) => [group, teams.map((team) => blankStanding(team, group))]));
+  worldCupFixtures.forEach((fixture, index) => {
+    const score = groupScore(index);
+    if (!score) return;
+    const home = tables[fixture.group].find((row) => row.team === fixture.home);
+    const away = tables[fixture.group].find((row) => row.team === fixture.away);
+    applyResult(home, score.home, score.away);
+    applyResult(away, score.away, score.home);
+  });
+  Object.values(tables).forEach((table) => table.sort(compareRows));
+  return tables;
+}
+
+function predictorCompletedGroups() {
+  return Object.fromEntries([..."ABCDEFGHIJKL"].map((group) => [
+    group,
+    worldCupFixtures.filter((fixture) => fixture.group === group).every((fixture, index) => Boolean(groupScore(index))),
+  ]));
+}
+
+function bestThirds(tables) {
+  return Object.values(tables).map((table) => table[2]).sort(compareRows).slice(0, 8);
+}
+
+function resolveSeed(seed, tables, thirdPool, usedThirds) {
+  if (seed.type === "winner") return tables[seed.group]?.[0]?.team || "";
+  if (seed.type === "runner") return tables[seed.group]?.[1]?.team || "";
+  const third = thirdPool.find((row) => seed.groups.includes(row.group) && !usedThirds.has(row.group));
+  if (!third) return `3rd ${seed.groups.join("/")}`;
+  usedThirds.add(third.group);
+  return third.team;
+}
+
+function r32Matches(tables) {
+  const thirds = bestThirds(tables);
+  const usedThirds = new Set();
+  return roundOf32Slots.map((slot) => ({ match: slot.match, round: 32, home: resolveSeed(slot.home, tables, thirds, usedThirds), away: resolveSeed(slot.away, tables, thirds, usedThirds) }));
+}
+
+function knockoutScore(match) {
+  const score = predictorState.knockout[match] || {};
+  const home = score.home === "" || score.home == null ? null : Number(score.home);
+  const away = score.away === "" || score.away == null ? null : Number(score.away);
+  return { home, away, winner: score.winner || "" };
+}
+
+function knockoutWinner(match) {
+  const score = knockoutScore(match.match);
+  if (!match.home || !match.away || match.home.startsWith("3rd ") || match.away.startsWith("3rd ")) return "";
+  if (Number.isInteger(score.home) && Number.isInteger(score.away) && score.home >= 0 && score.away >= 0) {
+    if (score.home > score.away) return match.home;
+    if (score.away > score.home) return match.away;
+    return score.winner;
+  }
+  return "";
+}
+
+function buildKnockout(tables) {
+  const rounds = { 32: r32Matches(tables) };
+  roundOrder.slice(1).forEach((round) => {
+    const firstMatch = round === 16 ? 89 : round === 8 ? 97 : round === 4 ? 101 : 103;
+    rounds[round] = knockoutLinks[round].map(([homeMatch, awayMatch], index) => {
+      const previous = Object.values(rounds).flat();
+      const home = knockoutWinner(previous.find((match) => match.match === homeMatch) || {});
+      const away = knockoutWinner(previous.find((match) => match.match === awayMatch) || {});
+      return { match: firstMatch + index, round, home, away };
+    });
+  });
+  return rounds;
+}
+
+function renderGroupInputs() {
+  byId("predictor-groups").innerHTML = [..."ABCDEFGHIJKL"].map((group) => {
+    const fixtures = worldCupFixtures.map((fixture, index) => ({ ...fixture, index })).filter((fixture) => fixture.group === group);
+    return `<section class="group-card"><h3>Group ${group}</h3>${fixtures.map((fixture) => {
+      const score = predictorState.group[fixture.index] || {};
+      return `<div class="score-row" data-group-fixture="${fixture.index}"><span>${fixture.date}</span><strong>${fixture.home}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" aria-label="${fixture.home} goals" /><strong>${fixture.away}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" aria-label="${fixture.away} goals" /></div>`;
+    }).join("")}</section>`;
+  }).join("");
+}
+
+function renderStandings(tables, completedGroups) {
+  const thirds = new Set(bestThirds(tables).map((row) => `${row.group}:${row.team}`));
+  byId("predictor-standings").innerHTML = Object.entries(tables).map(([group, rows]) => (
+    `<section class="standing-card"><h3>Group ${group}<span>${completedGroups[group] ? "complete" : "open"}</span></h3><table><tbody>${rows.map((row, index) => {
+      const qualifier = index < 2 || thirds.has(`${row.group}:${row.team}`);
+      return `<tr class="${qualifier ? "qualified" : ""}"><td>${index + 1}</td><td>${row.team}</td><td>${row.points}</td><td>${row.gd >= 0 ? "+" : ""}${row.gd}</td></tr>`;
+    }).join("")}</tbody></table></section>`
+  )).join("");
+}
+
+function knockoutMatchCard(match) {
+  const score = knockoutScore(match.match);
+  const locked = !match.home || !match.away || match.home.startsWith("3rd ") || match.away.startsWith("3rd ");
+  const tied = Number.isInteger(score.home) && Number.isInteger(score.away) && score.home === score.away && !locked;
+  const winner = knockoutWinner(match);
+  return `<article class="knockout-card ${winner ? "settled" : ""}" data-knockout-match="${match.match}">
+    <span>Match ${match.match}</span>
+    <div class="knockout-team"><strong>${match.home || "TBD"}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" ${locked ? "disabled" : ""} aria-label="${match.home || "Home"} goals" /></div>
+    <div class="knockout-team"><strong>${match.away || "TBD"}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" ${locked ? "disabled" : ""} aria-label="${match.away || "Away"} goals" /></div>
+    ${tied ? `<select aria-label="Tie winner"><option value="">Penalties winner</option><option ${score.winner === match.home ? "selected" : ""}>${match.home}</option><option ${score.winner === match.away ? "selected" : ""}>${match.away}</option></select>` : ""}
+    ${winner ? `<small>${winner} advance</small>` : ""}
+  </article>`;
+}
+
+function renderBracket(rounds) {
+  byId("predictor-bracket").innerHTML = roundOrder.map((round) => (
+    `<section class="bracket-round"><h3>${roundNames[round]}</h3>${rounds[round].map(knockoutMatchCard).join("")}</section>`
+  )).join("");
+}
+
+function renderPredictor() {
+  if (!worldCupReady) return;
+  const tables = predictorTables();
+  const completedGroups = predictorCompletedGroups();
+  const groupScores = worldCupFixtures.filter((fixture, index) => Boolean(groupScore(index))).length;
+  const completeGroupCount = Object.values(completedGroups).filter(Boolean).length;
+  const rounds = buildKnockout(tables);
+  const champion = knockoutWinner(rounds[2][0]);
+  byId("predictor-load-status").textContent = `${groupScores}/72 group scores entered`;
+  byId("predictor-group-status").textContent = `${completeGroupCount}/12 groups complete`;
+  byId("predictor-knockout-status").textContent = champion ? `${champion} win the tournament` : "Bracket updates as winners advance";
+  byId("predictor-progress").textContent = champion ? `Champion: ${champion}` : `${groupScores}/72 group fixtures scored. Complete the bracket to find a winner.`;
+  byId("predictor-winner").textContent = champion ? `${champion} win the World Cup` : "Winner pending";
+  renderGroupInputs();
+  renderStandings(tables, completedGroups);
+  renderBracket(rounds);
+}
+
+function updatePredictorGroupScore(row) {
+  const index = row.dataset.groupFixture;
+  const [home, away] = row.querySelectorAll("input");
+  predictorState.group[index] = { home: home.value, away: away.value };
+  if (!home.value && !away.value) delete predictorState.group[index];
+  predictorState.knockout = {};
+  savePredictorState();
+  renderPredictor();
+}
+
+function updatePredictorKnockout(row) {
+  const match = row.dataset.knockoutMatch;
+  const [home, away] = row.querySelectorAll("input");
+  const winner = row.querySelector("select")?.value || "";
+  predictorState.knockout[match] = { home: home.value, away: away.value, winner };
+  if (!home.value && !away.value && !winner) delete predictorState.knockout[match];
+  savePredictorState();
+  renderPredictor();
+}
+
+async function loadPredictor() {
+  await loadWorldCup();
+  loadPredictorState();
+  byId("predictor-reset-button").disabled = false;
+  renderPredictor();
+}
+
 async function loadWorldCup() {
   if (worldCupReady) return;
   byId("data-status").textContent = "Loading World Cup datasets";
@@ -314,7 +543,7 @@ async function loadWorldCup() {
     worldCupFixtures = parseWorldCupSchedule(schedule);
     internationalRows = parseCsv(results).map((row) => ({ date:row.date, home:row.home_team, away:row.away_team, homeGoals:Number(row.home_score), awayGoals:Number(row.away_score), tournament:row.tournament, neutral:String(row.neutral).toLowerCase()==="true" })).filter((row) => row.date && row.date < new Date().toISOString().slice(0,10) && row.home && row.away && Number.isFinite(row.homeGoals) && Number.isFinite(row.awayGoals));
     byId("world-cup-fixture").innerHTML = worldCupFixtures.map((fixture,index)=>`<option value="${index}">${fixture.date} / Group ${fixture.group} / ${fixture.home} vs ${fixture.away}</option>`).join("");
-    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; byId("world-cup-fetch-odds-button").disabled = false; byId("value-refresh-button").disabled = false; worldCupReady = true;
+    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; byId("world-cup-fetch-odds-button").disabled = false; byId("value-refresh-button").disabled = false; byId("predictor-reset-button").disabled = false; worldCupReady = true;
     byId("data-status").textContent = "World Cup datasets ready"; byId("world-cup-load-status").textContent = `${internationalRows.length.toLocaleString()} internationals / ${worldCupFixtures.length} group fixtures`;
     analyzeWorldCup();
   } catch (error) {
@@ -327,8 +556,10 @@ document.querySelectorAll("[data-view]").forEach((button) => button.addEventList
   byId("league-view").classList.toggle("is-hidden", button.dataset.view !== "league");
   byId("world-cup-view").classList.toggle("is-hidden", button.dataset.view !== "world-cup");
   byId("value-view").classList.toggle("is-hidden", button.dataset.view !== "value");
+  byId("predictor-view").classList.toggle("is-hidden", button.dataset.view !== "predictor");
   if (button.dataset.view === "world-cup") loadWorldCup();
   if (button.dataset.view === "value") refreshValueBoard();
+  if (button.dataset.view === "predictor") loadPredictor();
 }));
 
 matches = parseCsv(await fetch("/data/demo_matches.csv").then((response) => response.text()));
@@ -340,4 +571,17 @@ byId("world-cup-analyse-button").addEventListener("click", analyzeWorldCup);
 byId("world-cup-fetch-odds-button").addEventListener("click", fetchWorldCupOdds);
 byId("world-cup-fixture").addEventListener("change", analyzeWorldCup);
 byId("value-refresh-button").addEventListener("click", refreshValueBoard);
+byId("predictor-groups").addEventListener("change", (event) => {
+  const row = event.target.closest("[data-group-fixture]");
+  if (row) updatePredictorGroupScore(row);
+});
+byId("predictor-bracket").addEventListener("change", (event) => {
+  const row = event.target.closest("[data-knockout-match]");
+  if (row) updatePredictorKnockout(row);
+});
+byId("predictor-reset-button").addEventListener("click", () => {
+  predictorState = { group: {}, knockout: {} };
+  savePredictorState();
+  renderPredictor();
+});
 analyzeLeague();

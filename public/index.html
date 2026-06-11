@@ -40,6 +40,7 @@
         <button class="view-tab active" data-view="league" type="button">League analyser</button>
         <button class="view-tab" data-view="world-cup" type="button">World Cup 2026</button>
         <button class="view-tab" data-view="value" type="button">Value board</button>
+        <button class="view-tab" data-view="predictor" type="button">Tournament predictor</button>
       </nav>
 
       <section id="league-view" class="model-view">
@@ -118,6 +119,33 @@
               <button id="value-refresh-button" class="secondary-button inline-button" type="button" disabled>Refresh odds</button>
             </div>
             <div class="table-wrap"><table class="value-table"><thead><tr><th>Date</th><th>Fixture</th><th>Over 1.5 odds</th><th>Over 1.5 value</th><th>Over 1.5 %</th><th>Over 2.5 odds</th><th>Over 2.5 value</th><th>Over 2.5 %</th></tr></thead><tbody id="value-board-body"></tbody></table></div>
+          </section>
+        </section>
+      </section>
+
+      <section id="predictor-view" class="model-view is-hidden">
+        <section class="world-cup-intro">
+          <div><p class="eyebrow">SCORECAST / BRACKET BUILDER</p><h2>World Cup tournament predictor</h2><p>Enter group scores, generate the knockout bracket, then play every tie through to a winner.</p></div>
+          <span class="dataset-note" id="predictor-load-status">Select this view to load the predictor.</span>
+        </section>
+        <section class="predictor-layout">
+          <section class="panel predictor-toolbar">
+            <div><p class="eyebrow">TOURNAMENT STATE</p><h2 id="predictor-winner">Winner pending</h2><p id="predictor-progress">Enter group-stage scores to build the Round of 32.</p></div>
+            <button id="predictor-reset-button" class="secondary-button inline-button" type="button" disabled>Reset scores</button>
+          </section>
+          <section class="predictor-grid">
+            <section class="panel predictor-panel">
+              <div class="panel-heading horizontal"><div><p class="eyebrow">GROUP STAGE</p><h2>Scores</h2></div><span id="predictor-group-status"></span></div>
+              <div id="predictor-groups" class="predictor-groups"></div>
+            </section>
+            <section class="panel predictor-panel">
+              <div class="panel-heading horizontal"><div><p class="eyebrow">TABLES</p><h2>Qualifiers</h2></div><span>Top two plus best eight thirds</span></div>
+              <div id="predictor-standings" class="standings-grid"></div>
+            </section>
+          </section>
+          <section class="panel predictor-panel">
+            <div class="panel-heading horizontal"><div><p class="eyebrow">KNOCKOUTS</p><h2>Bracket</h2></div><span id="predictor-knockout-status"></span></div>
+            <div id="predictor-bracket" class="bracket-grid"></div>
           </section>
         </section>
       </section>
