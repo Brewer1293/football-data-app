@@ -28,9 +28,13 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .score-row { display:grid; gap:7px; padding:10px 0; border-top:1px solid var(--line); }
 .score-row:first-of-type { border-top:0; }
 .score-date,.knockout-card span { color:var(--muted); font-size:10px; font-weight:700; }
-.score-team { display:grid; grid-template-columns:minmax(0,1fr) 48px; align-items:center; gap:10px; margin:0; }
+.score-team { display:grid; grid-template-columns:minmax(0,1fr) 112px; align-items:center; gap:10px; margin:0; }
 .score-team strong { min-width:0; overflow:hidden; font-size:12px; letter-spacing:0; text-overflow:ellipsis; white-space:nowrap; }
-.score-team input,.knockout-team input { padding:7px 6px; text-align:center; }
+.score-control { display:grid; grid-template-columns:32px 40px 32px; align-items:center; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#1d1d22; }
+.score-control button { width:32px; height:32px; padding:0; border:0; color:var(--accent-soft); background:rgba(249,115,22,.07); font-size:16px; font-weight:900; }
+.score-control button:hover:not(:disabled) { background:rgba(249,115,22,.16); color:var(--text); }
+.score-control button:disabled { cursor:not-allowed; opacity:.35; }
+.score-control output { display:grid; min-width:40px; height:32px; place-items:center; border-right:1px solid var(--line); border-left:1px solid var(--line); color:var(--text); font-size:13px; font-weight:800; }
 .standings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .standing-card { padding:10px; min-width:0; }
 .standing-card h3 { display:flex; justify-content:space-between; gap:8px; }
@@ -45,7 +49,7 @@ button,input,select { font:inherit; } button { cursor:pointer; }
 .bracket-round { min-width:210px; }
 .knockout-card { display:grid; gap:7px; min-height:128px; padding:10px; margin-bottom:9px; }
 .knockout-card.settled { border-color:rgba(98,214,154,.25); }
-.knockout-team { display:grid; grid-template-columns:minmax(0,1fr) 46px; align-items:center; gap:8px; }
+.knockout-team { display:grid; grid-template-columns:minmax(0,1fr) 112px; align-items:center; gap:8px; }
 .knockout-team strong { min-width:0; overflow:hidden; font-size:12px; letter-spacing:0; text-overflow:ellipsis; white-space:nowrap; }
 .knockout-card select { padding:8px; }
 .knockout-card small { color:var(--green); font-size:10px; font-weight:800; }

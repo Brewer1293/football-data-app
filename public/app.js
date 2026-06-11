@@ -456,11 +456,21 @@ function renderGroupInputs() {
       const score = predictorState.group[fixture.index] || {};
       return `<div class="score-row" data-group-fixture="${fixture.index}">
         <span class="score-date">${fixture.date}</span>
-        <label class="score-team"><strong>${fixture.home}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" aria-label="${fixture.home} goals" /></label>
-        <label class="score-team"><strong>${fixture.away}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" aria-label="${fixture.away} goals" /></label>
+        <div class="score-team"><strong>${fixture.home}</strong>${scoreControl("home", score.home, `${fixture.home} goals`)}</div>
+        <div class="score-team"><strong>${fixture.away}</strong>${scoreControl("away", score.away, `${fixture.away} goals`)}</div>
       </div>`;
     }).join("")}</section>`;
   }).join("");
+}
+
+function scoreControl(side, value, label, disabled = false) {
+  const display = value === "" || value == null ? "-" : value;
+  const disabledAttribute = disabled ? "disabled" : "";
+  return `<div class="score-control" aria-label="${label}">
+    <button type="button" data-score-side="${side}" data-score-action="down" ${disabledAttribute} aria-label="Decrease ${label}">-</button>
+    <output>${display}</output>
+    <button type="button" data-score-side="${side}" data-score-action="up" ${disabledAttribute} aria-label="Increase ${label}">+</button>
+  </div>`;
 }
 
 function renderStandings(tables, completedGroups) {
@@ -480,8 +490,8 @@ function knockoutMatchCard(match) {
   const winner = knockoutWinner(match);
   return `<article class="knockout-card ${winner ? "settled" : ""}" data-knockout-match="${match.match}">
     <span>Match ${match.match}</span>
-    <div class="knockout-team"><strong>${match.home || "TBD"}</strong><input type="number" min="0" inputmode="numeric" value="${score.home ?? ""}" ${locked ? "disabled" : ""} aria-label="${match.home || "Home"} goals" /></div>
-    <div class="knockout-team"><strong>${match.away || "TBD"}</strong><input type="number" min="0" inputmode="numeric" value="${score.away ?? ""}" ${locked ? "disabled" : ""} aria-label="${match.away || "Away"} goals" /></div>
+    <div class="knockout-team"><strong>${match.home || "TBD"}</strong>${scoreControl("home", score.home, `${match.home || "Home"} goals`, locked)}</div>
+    <div class="knockout-team"><strong>${match.away || "TBD"}</strong>${scoreControl("away", score.away, `${match.away || "Away"} goals`, locked)}</div>
     ${tied ? `<select aria-label="Tie winner"><option value="">Penalties winner</option><option ${score.winner === match.home ? "selected" : ""}>${match.home}</option><option ${score.winner === match.away ? "selected" : ""}>${match.away}</option></select>` : ""}
     ${winner ? `<small>${winner} advance</small>` : ""}
   </article>`;
@@ -511,22 +521,40 @@ function renderPredictor() {
   renderBracket(rounds);
 }
 
-function updatePredictorGroupScore(row) {
+function nextScoreValue(value, action) {
+  const empty = value === "" || value == null;
+  if (empty) return action === "up" ? "0" : "";
+  const next = Number(value) + (action === "up" ? 1 : -1);
+  return next >= 0 ? String(next) : "";
+}
+
+function updatePredictorGroupScore(row, side, action) {
   const index = row.dataset.groupFixture;
-  const [home, away] = row.querySelectorAll("input");
-  predictorState.group[index] = { home: home.value, away: away.value };
-  if (!home.value && !away.value) delete predictorState.group[index];
+  const score = predictorState.group[index] || {};
+  score[side] = nextScoreValue(score[side], action);
+  predictorState.group[index] = score;
+  if (!score.home && !score.away) delete predictorState.group[index];
   predictorState.knockout = {};
   savePredictorState();
   renderPredictor();
 }
 
-function updatePredictorKnockout(row) {
+function updatePredictorKnockout(row, side, action) {
   const match = row.dataset.knockoutMatch;
-  const [home, away] = row.querySelectorAll("input");
-  const winner = row.querySelector("select")?.value || "";
-  predictorState.knockout[match] = { home: home.value, away: away.value, winner };
-  if (!home.value && !away.value && !winner) delete predictorState.knockout[match];
+  const score = predictorState.knockout[match] || {};
+  score[side] = nextScoreValue(score[side], action);
+  predictorState.knockout[match] = score;
+  if (!score.home && !score.away && !score.winner) delete predictorState.knockout[match];
+  savePredictorState();
+  renderPredictor();
+}
+
+function updatePredictorTieWinner(row) {
+  const match = row.dataset.knockoutMatch;
+  const score = predictorState.knockout[match] || {};
+  score.winner = row.querySelector("select")?.value || "";
+  predictorState.knockout[match] = score;
+  if (!score.home && !score.away && !score.winner) delete predictorState.knockout[match];
   savePredictorState();
   renderPredictor();
 }
@@ -575,13 +603,19 @@ byId("world-cup-analyse-button").addEventListener("click", analyzeWorldCup);
 byId("world-cup-fetch-odds-button").addEventListener("click", fetchWorldCupOdds);
 byId("world-cup-fixture").addEventListener("change", analyzeWorldCup);
 byId("value-refresh-button").addEventListener("click", refreshValueBoard);
-byId("predictor-groups").addEventListener("change", (event) => {
-  const row = event.target.closest("[data-group-fixture]");
-  if (row) updatePredictorGroupScore(row);
+byId("predictor-groups").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-score-action]");
+  const row = button?.closest("[data-group-fixture]");
+  if (button && row) updatePredictorGroupScore(row, button.dataset.scoreSide, button.dataset.scoreAction);
+});
+byId("predictor-bracket").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-score-action]");
+  const row = button?.closest("[data-knockout-match]");
+  if (button && row) updatePredictorKnockout(row, button.dataset.scoreSide, button.dataset.scoreAction);
 });
 byId("predictor-bracket").addEventListener("change", (event) => {
   const row = event.target.closest("[data-knockout-match]");
-  if (row) updatePredictorKnockout(row);
+  if (row && event.target.matches("select")) updatePredictorTieWinner(row);
 });
 byId("predictor-reset-button").addEventListener("click", () => {
   predictorState = { group: {}, knockout: {} };
