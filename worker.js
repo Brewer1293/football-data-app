@@ -31,6 +31,9 @@ export default {
 const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
 const ODDS_API_IO_BASE_URL = "https://api.odds-api.io/v3";
 const ODDS_API_IO_BOOKMAKERS = "Bet365";
+const ODDS_API_IO_EVENTS_CACHE_SECONDS = 900;
+const ODDS_API_IO_ODDS_CACHE_SECONDS = 600;
+const WORLD_CUP_ODDS_CACHE_SECONDS = 600;
 const GOALS_OVER_UNDER_BET_ID = 5;
 const MARKET_LINES = { "1.5": "over_1_5", "2.5": "over_2_5" };
 const TEAM_ALIASES = {
@@ -49,12 +52,21 @@ async function fetchWorldCupOdds(url, env) {
   if (!fixtureDate || !homeTeam || !awayTeam) {
     return jsonResponse({ error: "Missing date, home or away fixture parameter." }, 400);
   }
+  const cacheKey = new Request(cacheUrl("world-cup-odds", { fixtureDate, homeTeam, awayTeam }));
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
 
   const warnings = [];
   if (env.ODDS_API_IO_KEY) {
     try {
       const quotes = await fetchOddsApiIoFixtureOdds(env.ODDS_API_IO_KEY, fixtureDate, homeTeam, awayTeam);
-      return jsonResponse({ quotes, best: bestQuotes(quotes), warnings });
+      const response = jsonResponse(
+        { quotes, best: bestQuotes(quotes), warnings },
+        200,
+        WORLD_CUP_ODDS_CACHE_SECONDS,
+      );
+      await caches.default.put(cacheKey, response.clone());
+      return response;
     } catch (error) {
       warnings.push(`Odds-API.io: ${error.message}`);
     }
@@ -65,7 +77,13 @@ async function fetchWorldCupOdds(url, env) {
   if (env.API_FOOTBALL_KEY) {
     try {
       const quotes = await fetchApiFootballFixtureOdds(env.API_FOOTBALL_KEY, fixtureDate, homeTeam, awayTeam);
-      return jsonResponse({ quotes, best: bestQuotes(quotes), warnings });
+      const response = jsonResponse(
+        { quotes, best: bestQuotes(quotes), warnings },
+        200,
+        WORLD_CUP_ODDS_CACHE_SECONDS,
+      );
+      await caches.default.put(cacheKey, response.clone());
+      return response;
     } catch (error) {
       warnings.push(`API-Football: ${error.message}`);
     }
@@ -80,17 +98,27 @@ async function fetchOddsApiIoFixtureOdds(apiKey, fixtureDate, homeTeam, awayTeam
   const date = new Date(`${fixtureDate}T00:00:00Z`);
   const previousDay = offsetDate(date, -1);
   const nextDays = offsetDate(date, 2);
-  const events = await oddsApiIoGet("events", apiKey, {
+  const eventParams = {
     sport: "football",
     status: "pending,live",
     from: `${previousDay}T00:00:00Z`,
     to: `${nextDays}T00:00:00Z`,
-  });
+  };
+  const events = await cachedJson(
+    cacheUrl("odds-api-io-events", eventParams),
+    ODDS_API_IO_EVENTS_CACHE_SECONDS,
+    () => oddsApiIoGet("events", apiKey, eventParams),
+  );
   const fixture = findProviderFixture(events, homeTeam, awayTeam, "home", "away");
-  const payload = await oddsApiIoGet("odds", apiKey, {
+  const oddsParams = {
     eventId: fixture.id,
     bookmakers: ODDS_API_IO_BOOKMAKERS,
-  });
+  };
+  const payload = await cachedJson(
+    cacheUrl("odds-api-io-odds", oddsParams),
+    ODDS_API_IO_ODDS_CACHE_SECONDS,
+    () => oddsApiIoGet("odds", apiKey, oddsParams),
+  );
   const quotes = parseOddsApiIoQuotes(payload, fixtureDate, homeTeam, awayTeam);
   if (!quotes.length) throw new Error("fixture found but no Over 1.5 or Over 2.5 prices were returned.");
   return quotes;
@@ -116,6 +144,23 @@ async function oddsApiIoGet(endpoint, apiKey, params) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(await providerError(response));
   return response.json();
+}
+
+async function cachedJson(cacheKey, ttlSeconds, load) {
+  const request = new Request(cacheKey);
+  const cached = await caches.default.match(request);
+  if (cached) return cached.json();
+  const payload = await load();
+  await caches.default.put(
+    request,
+    new Response(JSON.stringify(payload), {
+      headers: {
+        "Cache-Control": `public, max-age=${ttlSeconds}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+    }),
+  );
+  return payload;
 }
 
 async function apiFootballGet(endpoint, apiKey, params) {
@@ -246,11 +291,19 @@ function offsetDate(date, days) {
   return next.toISOString().slice(0, 10);
 }
 
-function jsonResponse(payload, status = 200) {
+function cacheUrl(scope, params) {
+  const url = new URL(`https://football-data-lab.internal/${scope}`);
+  Object.entries(params)
+    .sort(([first], [second]) => first.localeCompare(second))
+    .forEach(([key, value]) => url.searchParams.set(key, String(value)));
+  return url.toString();
+}
+
+function jsonResponse(payload, status = 200, maxAge = 0) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: {
-      "Cache-Control": "no-store",
+      "Cache-Control": maxAge > 0 ? `public, max-age=${maxAge}` : "no-store",
       "Content-Type": "application/json; charset=utf-8",
     },
   });

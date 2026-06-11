@@ -244,6 +244,14 @@ function oddsCell(quote) {
   return quote ? `<strong>${quote.decimalOdds.toFixed(2)}</strong><small>${quote.bookmaker}</small>` : `<span class="muted-cell">-</span>`;
 }
 
+function fixtureLabelCells(fixture) {
+  return `<td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td>`;
+}
+
+function isRateLimitError(message) {
+  return /rate limit|quota|too many requests|429/i.test(message);
+}
+
 async function refreshValueBoard() {
   await loadWorldCup();
   const button = byId("value-refresh-button");
@@ -258,19 +266,27 @@ async function refreshValueBoard() {
   const ratings = eloRatings(internationalRows);
   button.disabled = true;
   status.textContent = `Scanning ${fixtures.length} fixtures...`;
-  body.innerHTML = fixtures.map((fixture) => `<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="6">Fetching odds...</td></tr>`).join("");
+  body.innerHTML = fixtures.map((fixture) => `<tr>${fixtureLabelCells(fixture)}<td colspan="6">Fetching odds...</td></tr>`).join("");
   const rows = [];
+  let rateLimitMessage = "";
   for (const fixture of fixtures) {
+    if (rateLimitMessage) {
+      rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${rateLimitMessage}</span></td></tr>`);
+      continue;
+    }
     try {
       const prediction = predictWorldCupFixture(fixture, ratings);
       const best = await getWorldCupOdds(fixture);
-      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
+      rows.push(`<tr>${fixtureLabelCells(fixture)}<td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${edgeCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td><td>${edgeCell(best.over_2_5, prediction.over25)}</td></tr>`);
     } catch (error) {
-      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="6"><span class="muted-cell">${error.message}</span></td></tr>`);
+      if (isRateLimitError(error.message)) {
+        rateLimitMessage = "Odds provider hourly limit reached. Cached rows remain available; retry after the reset window.";
+      }
+      rows.push(`<tr>${fixtureLabelCells(fixture)}<td colspan="6"><span class="muted-cell">${rateLimitMessage || error.message}</span></td></tr>`);
     }
     body.innerHTML = rows.join("");
   }
-  status.textContent = `${fixtures.length} fixtures scanned for ${localIsoDate()} to ${localIsoDate(addDays(new Date(), 2))}.`;
+  status.textContent = rateLimitMessage || `${fixtures.length} fixtures scanned for ${localIsoDate()} to ${localIsoDate(addDays(new Date(), 2))}.`;
   button.disabled = false;
 }
 
