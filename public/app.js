@@ -402,19 +402,38 @@ function bestThirds(tables) {
   return Object.values(tables).map((table) => table[2]).sort(compareRows).slice(0, 8);
 }
 
-function resolveSeed(seed, tables, thirdPool, usedThirds) {
+function thirdPlaceAssignments(thirdPool) {
+  const thirdSlots = roundOf32Slots.filter((slot) => slot.home.type === "third" || slot.away.type === "third");
+  const assign = (slotIndex, usedGroups, assignments) => {
+    if (slotIndex >= thirdSlots.length) return assignments;
+    const slot = thirdSlots[slotIndex];
+    const seed = slot.home.type === "third" ? slot.home : slot.away;
+    const candidates = thirdPool.filter((row) => seed.groups.includes(row.group) && !usedGroups.has(row.group));
+    for (const candidate of candidates) {
+      const nextUsed = new Set(usedGroups);
+      const nextAssignments = new Map(assignments);
+      nextUsed.add(candidate.group);
+      nextAssignments.set(slot.match, candidate);
+      const result = assign(slotIndex + 1, nextUsed, nextAssignments);
+      if (result) return result;
+    }
+    return null;
+  };
+  return assign(0, new Set(), new Map()) || new Map();
+}
+
+function resolveSeed(seed, tables, thirdAssignments, match) {
   if (seed.type === "winner") return tables[seed.group]?.[0]?.team || "";
   if (seed.type === "runner") return tables[seed.group]?.[1]?.team || "";
-  const third = thirdPool.find((row) => seed.groups.includes(row.group) && !usedThirds.has(row.group));
-  if (!third) return `3rd ${seed.groups.join("/")}`;
-  usedThirds.add(third.group);
+  const third = thirdAssignments.get(match);
+  if (!third || !seed.groups.includes(third.group)) return `3rd ${seed.groups.join("/")}`;
   return third.team;
 }
 
 function r32Matches(tables) {
   const thirds = bestThirds(tables);
-  const usedThirds = new Set();
-  return roundOf32Slots.map((slot) => ({ match: slot.match, round: 32, home: resolveSeed(slot.home, tables, thirds, usedThirds), away: resolveSeed(slot.away, tables, thirds, usedThirds) }));
+  const thirdAssignments = thirdPlaceAssignments(thirds);
+  return roundOf32Slots.map((slot) => ({ match: slot.match, round: 32, home: resolveSeed(slot.home, tables, thirdAssignments, slot.match), away: resolveSeed(slot.away, tables, thirdAssignments, slot.match) }));
 }
 
 function knockoutScore(match) {
