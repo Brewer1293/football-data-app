@@ -39,6 +39,7 @@
       <nav class="view-tabs" aria-label="Football models">
         <button class="view-tab active" data-view="league" type="button">League analyser</button>
         <button class="view-tab" data-view="world-cup" type="button">World Cup 2026</button>
+        <button class="view-tab" data-view="value" type="button">Value board</button>
       </nav>
 
       <section id="league-view" class="model-view">
@@ -102,6 +103,22 @@
               <div class="table-wrap"><table><thead><tr><th>Metric</th><th id="world-cup-home-heading">Team A</th><th id="world-cup-away-heading">Team B</th></tr></thead><tbody id="world-cup-comparison-body"></tbody></table></div>
             </section>
           </div>
+        </section>
+      </section>
+
+      <section id="value-view" class="model-view is-hidden">
+        <section class="world-cup-intro">
+          <div><p class="eyebrow">NEXT 3 DAYS / MARKET SCAN</p><h2>World Cup value board</h2><p>Upcoming group fixtures with provider goal odds compared against the international model.</p></div>
+          <span class="dataset-note" id="value-load-status">Select this view to scan upcoming fixtures.</span>
+        </section>
+        <section class="value-layout">
+          <section class="panel comparison">
+            <div class="panel-heading horizontal">
+              <div><p class="eyebrow">GOAL MARKETS</p><h2>Over lines</h2></div>
+              <button id="value-refresh-button" class="secondary-button inline-button" type="button" disabled>Refresh odds</button>
+            </div>
+            <div class="table-wrap"><table class="value-table"><thead><tr><th>Date</th><th>Fixture</th><th>Over 1.5 odds</th><th>Over 1.5 value</th><th>Over 2.5 odds</th><th>Over 2.5 value</th></tr></thead><tbody id="value-board-body"></tbody></table></div>
+          </section>
         </section>
       </section>
     </main>

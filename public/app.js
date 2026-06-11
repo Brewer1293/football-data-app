@@ -9,6 +9,8 @@ const average = (rows, key) => rows.reduce((total, row) => total + row[key], 0) 
 const metric = (label, value, note) => `<article class="metric"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
 const comparisonRow = (label, first, second) => `<tr><td>${label}</td><td>${first}</td><td>${second}</td></tr>`;
 const oddsResult = (odds, probability) => ({ implied: 1 / odds, ev: odds * probability - 1, value: probability > 1 / odds });
+const addDays = (date, days) => { const next = new Date(date); next.setDate(next.getDate() + days); return next; };
+const localIsoDate = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const market = (label, probability, odds) => {
   const result = oddsResult(odds, probability);
   return `<article class="market-card"><div class="market-head"><h3>${label}</h3><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Potential value" : "No model edge"}</span></div><div class="market-stats"><div><span>Model probability</span><strong>${pct(probability)}</strong></div><div><span>Implied probability</span><strong>${pct(result.implied)}</strong></div><div><span>Expected value</span><strong>${pct(result.ev)}</strong></div></div></article>`;
@@ -140,25 +142,38 @@ function internationalStats(team, rows, ratings) {
   return { team, matches:recent.length, goalsFor:values.reduce((sum,row)=>sum+row.goalsFor*row.weight,0)/weightTotal, goalsAgainst:values.reduce((sum,row)=>sum+row.goalsAgainst*row.weight,0)/weightTotal, over15:values.filter((row)=>total(row)>1).length/values.length, over25:values.filter((row)=>total(row)>2).length/values.length, cleanSheet:values.filter((row)=>row.goalsAgainst===0).length/values.length, failedToScore:values.filter((row)=>row.goalsFor===0).length/values.length, elo:ratings.get(named)||1500 };
 }
 
+function predictWorldCupFixture(fixture, ratings = eloRatings(internationalRows)) {
+  const first = internationalStats(fixture.home, internationalRows, ratings), second = internationalStats(fixture.away, internationalRows, ratings);
+  const sample = internationalRows.slice(-5000), baseline = sample.reduce((sum,row)=>sum+row.homeGoals+row.awayGoals,0)/sample.length/2;
+  const eloFactor = Math.exp((first.elo - second.elo) / 1200);
+  let expectedFirst = baseline * (first.goalsFor / baseline) * (second.goalsAgainst / baseline) * eloFactor;
+  let expectedSecond = baseline * (second.goalsFor / baseline) * (first.goalsAgainst / baseline) / eloFactor;
+  if (hosts.has(fixture.home)) expectedFirst *= 1.08; if (hosts.has(fixture.away)) expectedSecond *= 1.08;
+  expectedFirst = Math.max(.1, Math.min(expectedFirst, 4.5)); expectedSecond = Math.max(.1, Math.min(expectedSecond, 4.5));
+  const total = expectedFirst + expectedSecond, outcomes = scoreProbabilities(expectedFirst, expectedSecond);
+  return { first, second, expectedFirst, expectedSecond, total, outcomes, over15: poissonOver(total, 1), over25: poissonOver(total, 2), confidence: Math.min(first.matches, second.matches) >= 15 ? "Medium" : "Low" };
+}
+
 function analyzeWorldCup() {
   try {
-    const fixture = worldCupFixtures[Number(byId("world-cup-fixture").value)], ratings = eloRatings(internationalRows);
-    const first = internationalStats(fixture.home, internationalRows, ratings), second = internationalStats(fixture.away, internationalRows, ratings);
-    const sample = internationalRows.slice(-5000), baseline = sample.reduce((sum,row)=>sum+row.homeGoals+row.awayGoals,0)/sample.length/2;
-    const eloFactor = Math.exp((first.elo - second.elo) / 1200);
-    let expectedFirst = baseline * (first.goalsFor / baseline) * (second.goalsAgainst / baseline) * eloFactor;
-    let expectedSecond = baseline * (second.goalsFor / baseline) * (first.goalsAgainst / baseline) / eloFactor;
-    if (hosts.has(fixture.home)) expectedFirst *= 1.08; if (hosts.has(fixture.away)) expectedSecond *= 1.08;
-    expectedFirst = Math.max(.1, Math.min(expectedFirst, 4.5)); expectedSecond = Math.max(.1, Math.min(expectedSecond, 4.5));
-    const total = expectedFirst + expectedSecond, outcomes = scoreProbabilities(expectedFirst, expectedSecond);
-    byId("world-cup-title").textContent = `${fixture.home} vs ${fixture.away}`; byId("world-cup-subtitle").textContent = `Group ${fixture.group} / ${fixture.date} / ${fixture.venue}`; byId("world-cup-confidence").textContent = `${Math.min(first.matches, second.matches) >= 15 ? "Medium" : "Low"} confidence`;
+    const fixture = worldCupFixtures[Number(byId("world-cup-fixture").value)], prediction = predictWorldCupFixture(fixture);
+    const { first, second, expectedFirst, expectedSecond, total, outcomes } = prediction;
+    byId("world-cup-title").textContent = `${fixture.home} vs ${fixture.away}`; byId("world-cup-subtitle").textContent = `Group ${fixture.group} / ${fixture.date} / ${fixture.venue}`; byId("world-cup-confidence").textContent = `${prediction.confidence} confidence`;
     byId("world-cup-metrics").innerHTML = metric("Expected total goals", num(total), "Neutral-site model") + metric(`${fixture.home} win`, pct(outcomes.firstWin), num(expectedFirst) + " xG") + metric("Draw", pct(outcomes.draw), "Score distribution") + metric(`${fixture.away} win`, pct(outcomes.secondWin), num(expectedSecond) + " xG");
-    byId("world-cup-markets").innerHTML = market("Over 1.5 Goals", poissonOver(total, 1), Number(byId("world-cup-odds-15").value)) + market("Over 2.5 Goals", poissonOver(total, 2), Number(byId("world-cup-odds-25").value));
+    byId("world-cup-markets").innerHTML = market("Over 1.5 Goals", prediction.over15, Number(byId("world-cup-odds-15").value)) + market("Over 2.5 Goals", prediction.over25, Number(byId("world-cup-odds-25").value));
     byId("world-cup-home-heading").textContent = fixture.home; byId("world-cup-away-heading").textContent = fixture.away; byId("world-cup-summary").textContent = `${internationalRows.length.toLocaleString()} public internationals`;
     byId("world-cup-comparison-body").innerHTML = comparisonRow("Recent matches used", first.matches, second.matches) + comparisonRow("Weighted goals scored / game", num(first.goalsFor), num(second.goalsFor)) + comparisonRow("Weighted goals conceded / game", num(first.goalsAgainst), num(second.goalsAgainst)) + comparisonRow("Over 1.5 goals", pct(first.over15), pct(second.over15)) + comparisonRow("Over 2.5 goals", pct(first.over25), pct(second.over25)) + comparisonRow("Clean sheets", pct(first.cleanSheet), pct(second.cleanSheet)) + comparisonRow("Failed to score", pct(first.failedToScore), pct(second.failedToScore)) + comparisonRow("Local Elo rating", Math.round(first.elo), Math.round(second.elo));
   } catch (error) {
     byId("world-cup-title").textContent = error.message;
   }
+}
+
+async function getWorldCupOdds(fixture) {
+  const params = new URLSearchParams({ date: fixture.date, home: fixture.home, away: fixture.away });
+  const response = await fetch(`/api/world-cup-odds?${params.toString()}`);
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "No provider odds are available for this fixture yet.");
+  return payload.best || {};
 }
 
 async function fetchWorldCupOdds() {
@@ -169,18 +184,15 @@ async function fetchWorldCupOdds() {
   button.disabled = true;
   status.textContent = "Fetching latest provider odds...";
   try {
-    const params = new URLSearchParams({ date: fixture.date, home: fixture.home, away: fixture.away });
-    const response = await fetch(`/api/world-cup-odds?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "No provider odds are available for this fixture yet.");
+    const best = await getWorldCupOdds(fixture);
     const loaded = [];
-    if (payload.best?.over_1_5) {
-      byId("world-cup-odds-15").value = payload.best.over_1_5.decimalOdds.toFixed(2);
-      loaded.push(`Over 1.5 ${payload.best.over_1_5.decimalOdds.toFixed(2)} from ${payload.best.over_1_5.bookmaker}`);
+    if (best.over_1_5) {
+      byId("world-cup-odds-15").value = best.over_1_5.decimalOdds.toFixed(2);
+      loaded.push(`Over 1.5 ${best.over_1_5.decimalOdds.toFixed(2)} from ${best.over_1_5.bookmaker}`);
     }
-    if (payload.best?.over_2_5) {
-      byId("world-cup-odds-25").value = payload.best.over_2_5.decimalOdds.toFixed(2);
-      loaded.push(`Over 2.5 ${payload.best.over_2_5.decimalOdds.toFixed(2)} from ${payload.best.over_2_5.bookmaker}`);
+    if (best.over_2_5) {
+      byId("world-cup-odds-25").value = best.over_2_5.decimalOdds.toFixed(2);
+      loaded.push(`Over 2.5 ${best.over_2_5.decimalOdds.toFixed(2)} from ${best.over_2_5.bookmaker}`);
     }
     if (!loaded.length) throw new Error("The provider responded but did not include Over 1.5 or Over 2.5 prices.");
     status.textContent = loaded.join(" / ");
@@ -192,6 +204,52 @@ async function fetchWorldCupOdds() {
   }
 }
 
+function valueFixtures() {
+  const start = localIsoDate();
+  const end = localIsoDate(addDays(new Date(), 2));
+  return worldCupFixtures.filter((fixture) => fixture.date >= start && fixture.date <= end);
+}
+
+function valueCell(quote, probability) {
+  if (!quote) return `<span class="muted-cell">No price</span>`;
+  const result = oddsResult(quote.decimalOdds, probability);
+  return `<div class="value-result"><span class="value-chip ${result.value ? "" : "no-value"}">${result.value ? "Value" : "No edge"}</span><small>Model ${pct(probability)} / implied ${pct(result.implied)}</small></div>`;
+}
+
+function oddsCell(quote) {
+  return quote ? `<strong>${quote.decimalOdds.toFixed(2)}</strong><small>${quote.bookmaker}</small>` : `<span class="muted-cell">-</span>`;
+}
+
+async function refreshValueBoard() {
+  await loadWorldCup();
+  const button = byId("value-refresh-button");
+  const status = byId("value-load-status");
+  const body = byId("value-board-body");
+  const fixtures = valueFixtures();
+  if (!fixtures.length) {
+    status.textContent = "No World Cup fixtures in the next 3 days.";
+    body.innerHTML = `<tr><td colspan="6">No fixtures found for this window.</td></tr>`;
+    return;
+  }
+  const ratings = eloRatings(internationalRows);
+  button.disabled = true;
+  status.textContent = `Scanning ${fixtures.length} fixtures...`;
+  body.innerHTML = fixtures.map((fixture) => `<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="4">Fetching odds...</td></tr>`).join("");
+  const rows = [];
+  for (const fixture of fixtures) {
+    try {
+      const prediction = predictWorldCupFixture(fixture, ratings);
+      const best = await getWorldCupOdds(fixture);
+      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td>${oddsCell(best.over_1_5)}</td><td>${valueCell(best.over_1_5, prediction.over15)}</td><td>${oddsCell(best.over_2_5)}</td><td>${valueCell(best.over_2_5, prediction.over25)}</td></tr>`);
+    } catch (error) {
+      rows.push(`<tr><td>${fixture.date}</td><td><strong>${fixture.home} vs ${fixture.away}</strong><small>Group ${fixture.group} / ${fixture.venue}</small></td><td colspan="4"><span class="muted-cell">${error.message}</span></td></tr>`);
+    }
+    body.innerHTML = rows.join("");
+  }
+  status.textContent = `${fixtures.length} fixtures scanned for ${localIsoDate()} to ${localIsoDate(addDays(new Date(), 2))}.`;
+  button.disabled = false;
+}
+
 async function loadWorldCup() {
   if (worldCupReady) return;
   byId("data-status").textContent = "Loading World Cup datasets";
@@ -201,7 +259,7 @@ async function loadWorldCup() {
     worldCupFixtures = parseWorldCupSchedule(schedule);
     internationalRows = parseCsv(results).map((row) => ({ date:row.date, home:row.home_team, away:row.away_team, homeGoals:Number(row.home_score), awayGoals:Number(row.away_score), tournament:row.tournament, neutral:String(row.neutral).toLowerCase()==="true" })).filter((row) => row.date && row.date < new Date().toISOString().slice(0,10) && row.home && row.away && Number.isFinite(row.homeGoals) && Number.isFinite(row.awayGoals));
     byId("world-cup-fixture").innerHTML = worldCupFixtures.map((fixture,index)=>`<option value="${index}">${fixture.date} / Group ${fixture.group} / ${fixture.home} vs ${fixture.away}</option>`).join("");
-    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; byId("world-cup-fetch-odds-button").disabled = false; worldCupReady = true;
+    byId("world-cup-fixture").disabled = false; byId("world-cup-analyse-button").disabled = false; byId("world-cup-fetch-odds-button").disabled = false; byId("value-refresh-button").disabled = false; worldCupReady = true;
     byId("data-status").textContent = "World Cup datasets ready"; byId("world-cup-load-status").textContent = `${internationalRows.length.toLocaleString()} internationals / ${worldCupFixtures.length} group fixtures`;
     analyzeWorldCup();
   } catch (error) {
@@ -213,7 +271,9 @@ document.querySelectorAll("[data-view]").forEach((button) => button.addEventList
   document.querySelectorAll("[data-view]").forEach((item) => item.classList.toggle("active", item === button));
   byId("league-view").classList.toggle("is-hidden", button.dataset.view !== "league");
   byId("world-cup-view").classList.toggle("is-hidden", button.dataset.view !== "world-cup");
+  byId("value-view").classList.toggle("is-hidden", button.dataset.view !== "value");
   if (button.dataset.view === "world-cup") loadWorldCup();
+  if (button.dataset.view === "value") refreshValueBoard();
 }));
 
 matches = parseCsv(await fetch("/data/demo_matches.csv").then((response) => response.text()));
@@ -224,4 +284,5 @@ byId("analyse-button").addEventListener("click", analyzeLeague);
 byId("world-cup-analyse-button").addEventListener("click", analyzeWorldCup);
 byId("world-cup-fetch-odds-button").addEventListener("click", fetchWorldCupOdds);
 byId("world-cup-fixture").addEventListener("change", analyzeWorldCup);
+byId("value-refresh-button").addEventListener("click", refreshValueBoard);
 analyzeLeague();
